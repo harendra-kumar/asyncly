@@ -186,10 +186,14 @@ module Streamly.Internal.Data.Fold
     -- * Folding to SVar
     , toParallelSVar
     , toParallelSVarLimited
+
+    -- * Concurrent folds
+    , mkAsync_
     )
 where
 
-import Control.Monad (void)
+import Control.Concurrent.MVar (takeMVar)
+import Control.Monad (void, when)
 import Control.Monad.IO.Class (MonadIO(..))
 import Data.Functor.Identity (Identity(..))
 import Data.Map.Strict (Map)
@@ -206,6 +210,9 @@ import qualified Data.Map.Strict as Map
 import qualified Prelude
 
 import Streamly.Internal.Data.Pipe.Types (Pipe (..), PipeState(..))
+import Streamly.Internal.Data.Stream.StreamD.Type (newFoldSVar)
+import Streamly.Internal.Data.Stream.SVar (fromConsumer, pushToFold)
+
 import Streamly.Internal.Data.Fold.Types
 import Streamly.Internal.Data.Strict
 import Streamly.Internal.Data.SVar
@@ -846,6 +853,49 @@ foldCons (Fold stepL beginL doneL) (Fold stepR beginR doneR) =
 distribute :: Monad m => [Fold m a b] -> Fold m a [b]
 distribute [] = foldNil
 distribute (x:xs) = foldCons x (distribute xs)
+
+-- | Convert a () returning fold into an asynchronous fold. The original fold
+-- runs in a separate thread. The step function of the resulting fold just
+-- sends the input to the thread. The output of the fold is discarded. If an
+-- exception occurs in the original fold, the exception is thrown in the
+-- driving thread.  Note that exception checking is poll based, we check if the
+-- fold has thrown any exceptions only at the point when we push an element to
+-- the fold.
+--
+-- /Internal/
+--
+{-# INLINE mkAsync_ #-}
+mkAsync_ :: MonadAsync m => Fold m a () -> Fold m a ()
+mkAsync_ fld = Fold step initial extract
+
+    where
+
+    initial = fmap Left (newFoldSVar defState fld)
+
+    step (Left sv) a = do
+        r <- pushToFold sv a
+        return $ if r then Right sv else Left sv
+    step acc _ = return acc
+
+    -- XXX deduplicate this with tapAsyncD
+    -- XXX drain it asynchronously?
+    drainFold svr = do
+            -- In general, a Stop event would come equipped with the result
+            -- of the fold. It is not used here but it would be useful in
+            -- applicative and distribute.
+            done <- fromConsumer svr
+            when (not done) $ do
+                liftIO $ withDiagMVar svr "mkAsync_: waiting to drain"
+                       $ takeMVar (outputDoorBellFromConsumer svr)
+                drainFold svr
+
+    extract acc = do
+        let sv = case acc of
+                Right svr -> svr
+                Left svr -> svr
+        liftIO $ sendStop sv Nothing
+        -- drain/wait until a stop event arrives from the fold.
+        drainFold sv
 
 ------------------------------------------------------------------------------
 -- Partitioning
