@@ -299,9 +299,6 @@ module Streamly.Internal.Data.Stream.StreamD
     , the
 
     -- * Exceptions
-    , newFinalizedIORef
-    , runIORefFinalizer
-    , clearIORefFinalizer
     , gbracket
     , before
     , after
@@ -335,7 +332,7 @@ import Control.Monad.Trans.Control (MonadBaseControl, liftBaseOp_)
 import Data.Bits (shiftR, shiftL, (.|.), (.&.))
 import Data.Functor.Identity (Identity(..))
 import Data.Int (Int64)
-import Data.IORef (newIORef, readIORef, mkWeakIORef, writeIORef, IORef)
+import Data.IORef (newIORef, readIORef, mkWeakIORef, writeIORef)
 import Data.Maybe (fromJust, isJust, isNothing)
 import Data.Word (Word32)
 import Foreign.Ptr (Ptr)
@@ -371,6 +368,7 @@ import Streamly.Internal.Data.Time.Units
 import Streamly.Internal.Data.Unfold.Types (Unfold(..))
 import Streamly.Internal.Data.Strict (Tuple3'(..))
 
+import Streamly.Internal.Data.IORef
 import Streamly.Internal.Data.Stream.StreamD.Type
 import Streamly.Internal.Data.SVar
 import Streamly.Internal.Data.Stream.SVar (fromConsumer, pushToFold)
@@ -3202,39 +3200,6 @@ gbracket bef exc aft fexc fnormal =
             Skip s    -> return $ Skip (GBracketException (Stream step1 s))
             Stop      -> return Stop
 
--- | Create an IORef holding a finalizer that is called automatically when the
--- IORef is garbage collected. The IORef can be written to with a 'Nothing'
--- value to deactivate the finalizer.
-newFinalizedIORef :: (MonadIO m, MonadBaseControl IO m)
-    => m a -> m (IORef (Maybe (IO ())))
-newFinalizedIORef finalizer = do
-    mrun <- captureMonadState
-    ref <- liftIO $ newIORef $ Just $ liftIO $ void $ do
-                _ <- runInIO mrun finalizer
-                return ()
-    let finalizer1 = do
-            res <- readIORef ref
-            case res of
-                Nothing -> return ()
-                Just f -> f
-    _ <- liftIO $ mkWeakIORef ref finalizer1
-    return ref
-
--- | Run the finalizer stored in an IORef and deactivate it so that it is run
--- only once.
---
-runIORefFinalizer :: MonadIO m => IORef (Maybe (IO ())) -> m ()
-runIORefFinalizer ref = liftIO $ do
-    res <- readIORef ref
-    case res of
-        Nothing -> return ()
-        Just f -> writeIORef ref Nothing >> f
-
--- | Deactivate the finalizer stored in an IORef without running it.
---
-clearIORefFinalizer :: MonadIO m => IORef (Maybe (IO ())) -> m ()
-clearIORefFinalizer ref = liftIO $ writeIORef ref Nothing
-
 data GbracketIOState s1 s2 v wref
     = GBracketIOInit
     | GBracketIONormal s1 v wref
@@ -3301,6 +3266,8 @@ gbracketIO bef exc aft fexc fnormal =
             Skip s    -> return $ Skip (GBracketIOException (Stream step1 s))
             Stop      -> return Stop
 
+-- Same as nilM action <> stream
+--
 -- | Run a side effect before the stream yields its first element.
 {-# INLINE_NORMAL before #-}
 before :: Monad m => m b -> Stream m a -> Stream m a
@@ -3318,6 +3285,8 @@ before action (Stream step state) = Stream step' Nothing
             Skip s    -> return $ Skip (Just s)
             Stop      -> return Stop
 
+-- Same as stream <> nilM action
+--
 -- | Run a side effect whenever the stream stops normally.
 {-# INLINE_NORMAL after #-}
 after :: Monad m => m b -> Stream m a -> Stream m a
