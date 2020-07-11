@@ -617,7 +617,7 @@ ahead m1 m2 = mkStream $ \st yld sng stp ->
 {-# INLINE consMAhead #-}
 {-# SPECIALIZE consMAhead :: IO a -> AheadT IO a -> AheadT IO a #-}
 consMAhead :: MonadAsync m => m a -> AheadT m a -> AheadT m a
-consMAhead m r = fromStream $ K.yieldM m `ahead` (toStream r)
+consMAhead m r = fromStream $ K.yieldM m `ahead` toStream r
 
 ------------------------------------------------------------------------------
 -- AheadT
@@ -720,7 +720,7 @@ instance MonadAsync m => Monoid (AheadT m a) where
 {-# SPECIALIZE concatMapAhead :: (a -> AheadT IO b) -> AheadT IO a -> AheadT IO b #-}
 concatMapAhead :: MonadAsync m => (a -> AheadT m b) -> AheadT m a -> AheadT m b
 concatMapAhead f m = fromStream $
-    K.concatMapBy ahead (\a -> K.adapt $ f a) (K.adapt m)
+    K.concatMapBy ahead (K.adapt . f) (K.adapt m)
 
 {-# INLINE apAhead #-}
 apAhead :: MonadAsync m => AheadT m (a -> b) -> AheadT m a -> AheadT m b

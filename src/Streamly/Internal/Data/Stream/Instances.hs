@@ -142,7 +142,7 @@ instance (Foldable m, Monad m) => Foldable (STREAM m) where {                 \
                                                                               \
     {-# INLINE maximum #-};                                                   \
     maximum =                                                                 \
-          fromMaybe (errorWithoutStackTrace $ "maximum: empty stream")        \
+          fromMaybe (errorWithoutStackTrace "maximum: empty stream")          \
         . toMaybe                                                             \
         . foldl' getMax Nothing' where {                                      \
             getMax Nothing' x = Just' x;                                      \
@@ -150,7 +150,7 @@ instance (Foldable m, Monad m) => Foldable (STREAM m) where {                 \
                                                                               \
     {-# INLINE minimum #-};                                                   \
     minimum =                                                                 \
-          fromMaybe (errorWithoutStackTrace $ "minimum: empty stream")        \
+          fromMaybe (errorWithoutStackTrace "minimum: empty stream")          \
         . toMaybe                                                             \
         . foldl' getMin Nothing' where {                                      \
             getMin Nothing' x = Just' x;                                      \

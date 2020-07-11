@@ -236,13 +236,13 @@ concatAp (Stream stepa statea) (Stream stepb stateb) = Stream step' (Left statea
   where
     {-# INLINE_LATE step' #-}
     step' gst (Left st) = fmap
-        (\r -> case r of
+        (\case
             Yield f s -> Skip (Right (f, s, stateb))
             Skip    s -> Skip (Left s)
             Stop      -> Stop)
         (stepa (adaptState gst) st)
     step' gst (Right (f, os, st)) = fmap
-        (\r -> case r of
+        (\case
             Yield a s -> Yield (f a) (Right (f, os, s))
             Skip s    -> Skip (Right (f,os, s))
             Stop      -> Skip (Left os))
@@ -258,19 +258,17 @@ apSequence (Stream stepa statea) (Stream stepb stateb) =
     {-# INLINE_LATE step #-}
     step gst (Left st) =
         fmap
-            (\r ->
-                 case r of
-                     Yield _ s -> Skip (Right (s, stateb))
-                     Skip s -> Skip (Left s)
-                     Stop -> Stop)
+            (\case
+                 Yield _ s -> Skip (Right (s, stateb))
+                 Skip s -> Skip (Left s)
+                 Stop -> Stop)
             (stepa (adaptState gst) st)
     step gst (Right (ostate, st)) =
         fmap
-            (\r ->
-                 case r of
-                     Yield b s -> Yield b (Right (ostate, s))
-                     Skip s -> Skip (Right (ostate, s))
-                     Stop -> Skip (Left ostate))
+            (\case
+                 Yield b s -> Yield b (Right (ostate, s))
+                 Skip s -> Skip (Right (ostate, s))
+                 Stop -> Skip (Left ostate))
             (stepb gst st)
 
 {-# INLINE_NORMAL apDiscardSnd #-}
@@ -283,19 +281,17 @@ apDiscardSnd (Stream stepa statea) (Stream stepb stateb) =
     {-# INLINE_LATE step #-}
     step gst (Left st) =
         fmap
-            (\r ->
-                 case r of
-                     Yield b s -> Skip (Right (s, stateb, b))
-                     Skip s -> Skip (Left s)
-                     Stop -> Stop)
+            (\case
+                 Yield b s -> Skip (Right (s, stateb, b))
+                 Skip s -> Skip (Left s)
+                 Stop -> Stop)
             (stepa gst st)
     step gst (Right (ostate, st, b)) =
         fmap
-            (\r ->
-                 case r of
-                     Yield _ s -> Yield b (Right (ostate, s, b))
-                     Skip s -> Skip (Right (ostate, s, b))
-                     Stop -> Skip (Left ostate))
+            (\case
+                 Yield _ s -> Yield b (Right (ostate, s, b))
+                 Skip s -> Skip (Right (ostate, s, b))
+                 Stop -> Skip (Left ostate))
             (stepb (adaptState gst) st)
 
 instance Applicative f => Applicative (Stream f) where
@@ -388,7 +384,7 @@ foldrMx fstep final convert (Stream step state) = convert $ go SPEC state
 --
 {-# INLINE_NORMAL foldr #-}
 foldr :: Monad m => (a -> b -> b) -> b -> Stream m a -> m b
-foldr f z = foldrM (\a b -> liftA2 f (return a) b) (return z)
+foldr f z = foldrM (fmap . f) (return z)
 
 -- | Create a singleton 'Stream' from a monadic action.
 {-# INLINE_NORMAL yieldM #-}
@@ -473,8 +469,8 @@ foldlMx' fstep begin done (Stream step state) =
 
 {-# INLINE foldlx' #-}
 foldlx' :: Monad m => (x -> a -> x) -> x -> (x -> b) -> Stream m a -> m b
-foldlx' fstep begin done m =
-    foldlMx' (\b a -> return (fstep b a)) (return begin) (return . done) m
+foldlx' fstep begin done =
+    foldlMx' (\b a -> return (fstep b a)) (return begin) (return . done)
 
 -- XXX implement in terms of foldlMx'?
 {-# INLINE_NORMAL foldlM' #-}

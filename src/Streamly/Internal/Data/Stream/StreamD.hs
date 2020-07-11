@@ -427,7 +427,7 @@ uncons (UnStream step state) = go state
 
 {-# INLINE_NORMAL unfoldrM #-}
 unfoldrM :: Monad m => (s -> m (Maybe (a, s))) -> s -> Stream m a
-unfoldrM next state = Stream step state
+unfoldrM next = Stream step
   where
     {-# INLINE_LATE step #-}
     step _ st = do
@@ -729,8 +729,8 @@ fromSVar svar = Stream step FromSVarInit
     step _ (FromSVarLoop sv []) = do
         done <- postProcess sv
         return $ Skip $ if done
-                      then (FromSVarDone sv)
-                      else (FromSVarRead sv)
+                      then FromSVarDone sv
+                      else FromSVarRead sv
 
     step _ (FromSVarLoop sv (ev : es)) = do
         case ev of
@@ -758,7 +758,7 @@ fromSVar svar = Stream step FromSVarInit
                 StopAny -> return True
                 StopBy -> do
                     sid <- liftIO $ readIORef (svarStopBy sv)
-                    return $ if tid == sid then True else False
+                    return (tid == sid)
 
     step _ (FromSVarDone sv) = do
         when (svarInspectMode sv) $ do
@@ -811,7 +811,7 @@ fromProducer svar = Stream step (FromSVarRead svar)
 
 {-# INLINE_NORMAL hoist #-}
 hoist :: Monad n => (forall x. m x -> n x) -> Stream m a -> Stream n a
-hoist f (Stream step state) = (Stream step' state)
+hoist f (Stream step state) = Stream step' state
     where
     {-# INLINE_LATE step' #-}
     step' gst st = do
@@ -1258,15 +1258,15 @@ drain (Stream step state) = go SPEC state
 
 {-# INLINE_NORMAL null #-}
 null :: Monad m => Stream m a -> m Bool
-null m = foldrM (\_ _ -> return False) (return True) m
+null = foldrM (\_ _ -> return False) (return True)
 
 {-# INLINE_NORMAL head #-}
 head :: Monad m => Stream m a -> m (Maybe a)
-head m = foldrM (\x _ -> return (Just x)) (return Nothing) m
+head = foldrM (\x _ -> return (Just x)) (return Nothing)
 
 {-# INLINE_NORMAL headElse #-}
 headElse :: Monad m => a -> Stream m a -> m a
-headElse a m = foldrM (\x _ -> return x) (return a) m
+headElse a = foldrM (\x _ -> return x) (return a)
 
 -- Does not fuse, has the same performance as the StreamK version.
 {-# INLINE_NORMAL tail #-}
@@ -1422,13 +1422,13 @@ minimumBy cmp (Stream step state) = go Nothing state
 
 {-# INLINE_NORMAL lookup #-}
 lookup :: (Monad m, Eq a) => a -> Stream m (a, b) -> m (Maybe b)
-lookup e m = foldrM (\(a, b) xs -> if e == a then return (Just b) else xs)
-                   (return Nothing) m
+lookup e = foldrM (\(a, b) xs -> if e == a then return (Just b) else xs)
+                   (return Nothing)
 
 {-# INLINE_NORMAL findM #-}
 findM :: Monad m => (a -> m Bool) -> Stream m a -> m (Maybe a)
-findM p m = foldrM (\x xs -> p x >>= \r -> if r then return (Just x) else xs)
-                   (return Nothing) m
+findM p = foldrM (\x xs -> p x >>= \r -> if r then return (Just x) else xs)
+                   (return Nothing)
 
 {-# INLINE find #-}
 find :: Monad m => (a -> Bool) -> Stream m a -> m (Maybe a)
@@ -2380,7 +2380,7 @@ splitInnerBy
     -> Stream m (f a)
     -> Stream m (f a)
 splitInnerBy splitter joiner (Stream step1 state1) =
-    (Stream step (SplitInitial state1))
+    Stream step (SplitInitial state1)
 
     where
 
@@ -2394,7 +2394,7 @@ splitInnerBy splitter joiner (Stream step1 state1) =
                     Nothing -> Skip (SplitBuffering s x1)
                     Just x2 -> Skip (SplitYielding x1 (SplitSplitting s x2))
             Skip s -> return $ Skip (SplitInitial s)
-            Stop -> return $ Stop
+            Stop -> return Stop
 
     step gst (SplitBuffering st buf) = do
         r <- step1 gst st
@@ -2415,7 +2415,7 @@ splitInnerBy splitter joiner (Stream step1 state1) =
                 Just x2 -> Skip $ SplitYielding x1 (SplitSplitting st x2)
 
     step _ (SplitYielding x next) = return $ Yield x next
-    step _ SplitFinishing = return $ Stop
+    step _ SplitFinishing = return Stop
 
 -- | Performs infix separator style splitting.
 {-# INLINE_NORMAL splitInnerBySuffix #-}
@@ -2426,7 +2426,7 @@ splitInnerBySuffix
     -> Stream m (f a)
     -> Stream m (f a)
 splitInnerBySuffix splitter joiner (Stream step1 state1) =
-    (Stream step (SplitInitial state1))
+    Stream step (SplitInitial state1)
 
     where
 
@@ -2440,7 +2440,7 @@ splitInnerBySuffix splitter joiner (Stream step1 state1) =
                     Nothing -> Skip (SplitBuffering s x1)
                     Just x2 -> Skip (SplitYielding x1 (SplitSplitting s x2))
             Skip s -> return $ Skip (SplitInitial s)
-            Stop -> return $ Stop
+            Stop -> return Stop
 
     step gst (SplitBuffering st buf) = do
         r <- step1 gst st
@@ -2464,7 +2464,7 @@ splitInnerBySuffix splitter joiner (Stream step1 state1) =
                 Just x2 -> Skip $ SplitYielding x1 (SplitSplitting st x2)
 
     step _ (SplitYielding x next) = return $ Yield x next
-    step _ SplitFinishing = return $ Stop
+    step _ SplitFinishing = return Stop
 
 ------------------------------------------------------------------------------
 -- Substreams
@@ -2575,7 +2575,7 @@ concatMapU (Unfold istep inject) (Stream ostep ost) =
                 i <- inject a
                 i `seq` return (Skip (ConcatMapUInner o' i))
             Skip o' -> return $ Skip (ConcatMapUOuter o')
-            Stop -> return $ Stop
+            Stop -> return Stop
 
     step _ (ConcatMapUInner o i) = do
         r <- istep i
@@ -3526,7 +3526,7 @@ onException :: MonadCatch m => m b -> Stream m a -> Stream m a
 onException action str =
     gbracket_ (return ()) MC.try return
         (\_ (e :: MC.SomeException) _ -> nilM (action >> MC.throwM e))
-        (\_ -> str)
+        (const str)
 
 {-# INLINE_NORMAL _onException #-}
 _onException :: MonadCatch m => m b -> Stream m a -> Stream m a
@@ -3547,18 +3547,18 @@ _onException action (Stream step state) = Stream step' state
 {-# INLINE_NORMAL bracket_ #-}
 bracket_ :: MonadCatch m
     => m b -> (b -> m c) -> (b -> Stream m a) -> Stream m a
-bracket_ bef aft bet =
+bracket_ bef aft =
     gbracket_ bef MC.try aft
-        (\a (e :: SomeException) _ -> nilM (aft a >> MC.throwM e)) bet
+        (\a (e :: SomeException) _ -> nilM (aft a >> MC.throwM e))
 
 -- | See 'Streamly.Internal.Data.Stream.IsStream.bracket'.
 --
 {-# INLINE_NORMAL bracket #-}
 bracket :: (MonadAsync m, MonadCatch m)
     => m b -> (b -> m c) -> (b -> Stream m a) -> Stream m a
-bracket bef aft bet =
+bracket bef aft =
     gbracket bef MC.try aft
-        (\a (e :: SomeException) _ -> aft a >> return (nilM (MC.throwM e))) bet
+        (\a (e :: SomeException) _ -> aft a >> return (nilM (MC.throwM e)))
 
 data BracketState s v = BracketInit | BracketRun s v
 
@@ -3590,7 +3590,8 @@ _bracket bef aft bet = Stream step' BracketInit
 --
 {-# INLINE finally_ #-}
 finally_ :: MonadCatch m => m b -> Stream m a -> Stream m a
-finally_ action xs = bracket_ (return ()) (\_ -> action) (const xs)
+-- finally action xs = after action $ onException action xs
+finally_ action xs = bracket_ (return ()) (const action) (const xs)
 
 -- | See 'Streamly.Internal.Data.Stream.IsStream.finally'.
 --
@@ -3598,7 +3599,7 @@ finally_ action xs = bracket_ (return ()) (\_ -> action) (const xs)
 --
 {-# INLINE finally #-}
 finally :: (MonadAsync m, MonadCatch m) => m b -> Stream m a -> Stream m a
-finally action xs = bracket (return ()) (\_ -> action) (const xs)
+finally action xs = bracket (return ()) (const action) (const xs)
 
 -- | See 'Streamly.Internal.Data.Stream.IsStream.ghandle'.
 --
@@ -3606,7 +3607,7 @@ finally action xs = bracket (return ()) (\_ -> action) (const xs)
 ghandle :: (MonadCatch m, Exception e)
     => (e -> Stream m a -> Stream m a) -> Stream m a -> Stream m a
 ghandle f str =
-    gbracket_ (return ()) MC.try return (\_ -> f) (\_ -> str)
+    gbracket_ (return ()) MC.try return (const f) (const str)
 
 -- | See 'Streamly.Internal.Data.Stream.IsStream.handle'.
 --
@@ -3614,7 +3615,7 @@ ghandle f str =
 handle :: (MonadCatch m, Exception e)
     => (e -> Stream m a) -> Stream m a -> Stream m a
 handle f str =
-    gbracket_ (return ()) MC.try return (\_ e _ -> f e) (\_ -> str)
+    gbracket_ (return ()) MC.try return (\_ e _ -> f e) (const str)
 
 -- | Alternate (custom) implementation of 'handle'.
 --
@@ -3738,8 +3739,8 @@ postscanlMx' fstep begin done (Stream step state) = do
 {-# INLINE_NORMAL postscanlx' #-}
 postscanlx' :: Monad m
     => (x -> a -> x) -> x -> (x -> b) -> Stream m a -> Stream m b
-postscanlx' fstep begin done s =
-    postscanlMx' (\b a -> return (fstep b a)) (return begin) (return . done) s
+postscanlx' fstep begin done =
+    postscanlMx' (\b a -> return (fstep b a)) (return begin) (return . done)
 
 -- XXX do we need consM strict to evaluate the begin value?
 {-# INLINE scanlMx' #-}
@@ -3782,8 +3783,8 @@ scanOnce fld@(FL.Fold _ begin done) s =
 {-# INLINE scanlx' #-}
 scanlx' :: Monad m
     => (x -> a -> x) -> x -> (x -> b) -> Stream m a -> Stream m b
-scanlx' fstep begin done s =
-    scanlMx' (\b a -> return (fstep b a)) (return begin) (return . done) s
+scanlx' fstep begin done =
+    scanlMx' (\b a -> return (fstep b a)) (return begin) (return . done)
 
 ------------------------------------------------------------------------------
 -- postscans
@@ -3982,7 +3983,7 @@ rollingMapM f (Stream step1 state1) = Stream step (RollingMapInit state1)
                 !res <- f x x1
                 return $ Yield res $ RollingMapGo s x
             Skip s -> return $ Skip $ RollingMapGo s x1
-            Stop   -> return $ Stop
+            Stop   -> return Stop
 
 {-# INLINE rollingMap #-}
 rollingMap :: Monad m => (a -> a -> b) -> Stream m a -> Stream m b
@@ -4392,12 +4393,12 @@ intersperseSuffixBySpan n action (Stream step state) =
     step' _ (SuffixSpanSuffix st) = do
         action >>= \r -> return $ Skip (SuffixSpanYield r (SuffixSpanElem st n))
 
-    step' _ (SuffixSpanLast) = do
+    step' _ SuffixSpanLast = do
         action >>= \r -> return $ Skip (SuffixSpanYield r SuffixSpanStop)
 
     step' _ (SuffixSpanYield x next) = return $ Yield x next
 
-    step' _ (SuffixSpanStop) = return Stop
+    step' _ SuffixSpanStop = return Stop
 
 {-# INLINE intersperse #-}
 intersperse :: Monad m => a -> Stream m a -> Stream m a
@@ -4652,7 +4653,7 @@ toSVarParallel st sv xs =
     where
 
     {-# NOINLINE work #-}
-    work info = (foldOnce (FL.toParallelSVar sv info) xs)
+    work info = foldOnce (FL.toParallelSVar sv info) xs
 
     {-# NOINLINE workLim #-}
     workLim info = foldOnce (FL.toParallelSVarLimited sv info) xs
@@ -4732,7 +4733,7 @@ mkParallel = fromStreamD . mkParallelD . toStreamD
 -- /Internal/
 --
 {-# INLINE_NORMAL newCallbackStream #-}
-newCallbackStream :: (K.IsStream t, MonadAsync m) => m ((a -> m ()), t m a)
+newCallbackStream :: (K.IsStream t, MonadAsync m) => m (a -> m (), t m a)
 newCallbackStream = do
     sv <- newParallelVar StopNone defState
 
@@ -4806,7 +4807,7 @@ tapAsync f (Stream step1 state1) = Stream step TapInit
             Skip s -> return $ Skip (Tapping sv s)
             Stop -> do
                 stopFold sv
-                return $ Stop
+                return Stop
 
     step gst (TapDone st) = do
         r <- step1 gst st
@@ -4948,4 +4949,4 @@ times g = Stream step Nothing
         -- efficiency.  or maybe we can use a representation using Double for
         -- floating precision time
         return $ Yield (toAbsTime (MicroSecond64 t0),
-            (toRelTime64 (MicroSecond64 (a - t0)))) s
+            toRelTime64 (MicroSecond64 (a - t0))) s

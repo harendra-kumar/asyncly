@@ -1,15 +1,5 @@
-src/Streamly/Internal/Data/Stream/SVar.hs
-src/Streamly/Internal/Data/Stream/Serial.hs
-src/Streamly/Internal/Data/Stream/Zip.hs
-src/Streamly/Internal/Data/Stream/Parallel.hs
-src/Streamly/Internal/Data/Stream/Async.hs
 src/Streamly/Internal/Data/Stream/Enumeration.hs
-src/Streamly/Internal/Data/Stream/StreamDK.hs
-src/Streamly/Internal/Data/Stream/StreamK.hs
 src/Streamly/Internal/Data/Stream/StreamK/Type.hs
-src/Streamly/Internal/Data/Stream/Ahead.hs
-src/Streamly/Internal/Data/Stream/StreamD/Type.hs
-src/Streamly/Internal/Data/Stream/StreamDK/Type.hs
 src/Streamly/Internal/Data/Stream/StreamD.hs
 src/Streamly/Internal/Data/Pipe/Types.hs
 src/Streamly/Internal/Data/SmallArray/Types.hs
