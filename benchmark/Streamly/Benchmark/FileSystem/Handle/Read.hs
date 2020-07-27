@@ -389,6 +389,9 @@ o_1_space_reduce_read_grouped env =
 lf :: Word8
 lf = fromIntegral (ord '\n')
 
+bs :: Word8
+bs = fromIntegral (ord '\\')
+
 toarr :: String -> A.Array Word8
 toarr = A.fromList . map (fromIntegral . ord)
 
@@ -418,11 +421,72 @@ inspect $ 'splitOnSuffix `hasNoType` ''IUF.ConcatState -- FH.read/UF.concat
 inspect $ 'splitOnSuffix `hasNoType` ''A.ReadUState  -- FH.read/A.read
 #endif
 
+-- | Seperate newlines and other characters using deintercalate
+deintercalate :: Handle -> IO ()
+deintercalate inh = do
+    let
+        newline = 10
+        prsr1 = PR.takeWhile (/=newline) FL.drain
+        prsr2 = PR.takeWhile (==newline) FL.drain
+        prsr = PR.deintercalate FL.drain prsr1 FL.drain prsr2
+    
+    (_, _) <- IP.parse prsr (S.unfold FH.read inh)
+    return ()
+
+-- | Split on line feed (but do not discard it - take it in next parse)
+parseManySepWith :: Handle -> IO Int
+parseManySepWith inh =
+    (S.length $ IP.parseMany (PR.sliceSepWith (== lf) FL.drain)
+                             (S.unfold FH.read inh)) -- >>= print
+
 -- | Split on line feed.
 parseManySepBy :: Handle -> IO Int
 parseManySepBy inh =
     (S.length $ IP.parseMany (PR.sliceSepBy (== lf) FL.drain)
                              (S.unfold FH.read inh)) -- >>= print
+
+-- | Split on line feed.
+parseManySepByP :: Handle -> IO Int
+parseManySepByP inh =
+    S.length $ 
+        IP.parseMany 
+        (PR.sliceSepByP (== lf) (PR.takeWhile (\_ -> True) FL.drain))
+        (S.unfold FH.read inh)
+
+-- | Split on line feed, and use backslash as escape character
+escapedSliceSepBy :: Handle -> IO Int
+escapedSliceSepBy inh =
+    S.length $ 
+        IP.parseMany 
+        (PR.escapedSliceSepBy (== lf) (== bs) FL.drain)
+        (S.unfold FH.read inh)
+
+-- | Split on line feed (as a suffix)
+parseManyEndWith :: Handle -> IO Int
+parseManyEndWith inh =
+    (S.length $ IP.parseMany (PR.sliceEndWith (== lf) FL.drain)
+                             (S.unfold FH.read inh))
+
+-- | Split on line feed (as a prefix)
+parseManyBeginWith :: Handle -> IO Int
+parseManyBeginWith inh =
+    (S.length $ IP.parseMany (PR.sliceBeginWith (== lf) FL.drain)
+                             (S.unfold FH.read inh))
+
+-- | Group based on (>) as comp function to compare
+-- between starting element and current element
+parseManyGroupBy :: Handle -> IO Int
+parseManyGroupBy inh =
+    (S.length $ IP.parseMany (PR.groupBy (>) FL.drain)
+                             (S.unfold FH.read inh))
+
+-- | Words by space but using wordBy parser
+parseManyWordBy :: Handle -> IO Int
+parseManyWordBy inh =
+    (S.length $ wordsBy1 isSp FL.drain
+        $ S.unfold FH.read inh)
+
+    where wordsBy1 prd f = IP.parseMany (PR.wordBy prd f)
 
 -- | Words by space
 wordsBy :: Handle -> IO Int
@@ -462,8 +526,24 @@ splitOnSuffixSeq str inh =
 o_1_space_reduce_read_split :: BenchEnv -> [Benchmark]
 o_1_space_reduce_read_split env =
     [ bgroup "reduce/read"
-        [ mkBench "S.parseMany (PR.sliceSepBy (== lf) FL.drain)" env
+        [ mkBench "deintercalate" env
+            $ \inh _ -> deintercalate inh
+        , mkBench "S.parseMany (PR.sliceSepWith (== lf) FL.drain)" env
+            $ \inh _ -> parseManySepWith inh
+        , mkBench "S.parseMany (PR.sliceSepBy (== lf) FL.drain)" env
             $ \inh _ -> parseManySepBy inh
+        , mkBench "S.parseMany (PR.sliceSepByP (== lf) (PR.takeWhile (\\_ -> True) FL.drain))" env
+            $ \inh _ -> parseManySepByP inh
+        , mkBench "S.parseMany (PR.escapedSliceSepBy (== lf) (== bs) FL.drain)" env
+            $ \inh _ -> escapedSliceSepBy inh
+        , mkBench "S.parseMany (PR.sliceEndWith (== lf) FL.drain)" env
+            $ \inh _ -> parseManyEndWith inh
+        , mkBench "S.parseMany (PR.sliceBeginWith (== lf) FL.drain)" env
+            $ \inh _ -> parseManyBeginWith inh
+            , mkBench "S.parseMany (PR.groupBy (>) FL.drain)" env
+            $ \inh _ -> parseManyGroupBy inh
+        , mkBench "IP.parseMany PR.wordBy" env $ \inh _ ->
+            parseManyWordBy inh
         , mkBench "S.wordsBy isSpace FL.drain" env $ \inh _ ->
             wordsBy inh
         , mkBench "S.splitOn (== lf) FL.drain" env $ \inh _ ->

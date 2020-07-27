@@ -329,6 +329,74 @@ sliceSepByMax =
             where
                 predicate = (== 1)
 
+sliceEndWith :: Property
+sliceEndWith =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        case S.parseD (P.sliceEndWith predicate FL.toList) (S.fromList ls) of
+            Right parsed_list -> 
+                checkListEqual 
+                parsed_list 
+                (takeWhileAndFirstFail (not . predicate) ls)
+            Left _ -> property False
+        where
+            predicate = (== 1)
+
+            takeWhileAndFirstFail prd (x : xs) =
+                if prd x 
+                then x : takeWhileAndFirstFail prd xs
+                else [x]
+            takeWhileAndFirstFail _ [] = []
+
+sliceBeginWith :: Property
+sliceBeginWith =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        case S.parseD (P.sliceBeginWith predicate FL.toList) (S.fromList ls) of
+            Right parsed_list -> 
+                checkListEqual parsed_list (takeWhileOrFirst (not . predicate) ls)
+            Left _ -> property False
+        where
+            predicate = (== 1)
+
+            takeWhileOrFirst prd (x : xs) = x : Prelude.takeWhile prd xs
+            takeWhileOrFirst _ [] = []
+
+wordBy :: Property
+wordBy =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        case S.parseD (P.wordBy predicate FL.toList) (S.fromList ls) of
+            Right parsed_list ->
+                checkListEqual parsed_list (takeFirstFails predicate ls)
+            Left _ -> property False
+        where
+            predicate = (== 1)
+
+            takeFirstFails prd list =
+                Prelude.takeWhile (not . prd) (removePass prd list)
+
+                where
+
+                removePass prd1 (x : xs) =
+                    if prd1 x
+                    then removePass prd1 xs
+                    else (x : xs)
+                removePass _ [] = []
+
+groupBy :: Property
+groupBy =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        case S.parseD (P.groupBy cmp FL.toList) (S.fromList ls) of
+            Right parsed_list -> 
+                checkListEqual parsed_list (takeWhileCmpFirst cmp ls)
+            Left _ -> property False
+        where
+            cmp = (==)
+
+            takeWhileCmpFirst comp list =
+                case list of
+                    [] -> []
+                    (x : xs) -> 
+                        x : Prelude.takeWhile (\curr -> x `comp` curr) xs
+
 splitWith :: Property
 splitWith =
     forAll (listOf (chooseInt (0, 1))) $ \ls ->
@@ -386,6 +454,78 @@ teeWithFailBoth =
     property (case S.parseD (P.teeWith (,) (P.die "die") (P.die "die")) (S.fromList [1 :: Int]) of
         Right _ -> False
         Left _ -> True)
+
+deintercalate1 :: Property
+deintercalate1 =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        case S.parseD prsr (S.fromList ls) of
+            Right parsed_list_tuple ->
+                let
+                    (parsedList1, parsedList2) = parsed_list_tuple
+                    (list1, list2) = partition (== 0) ls
+                in
+                    checkListEqual parsedList1 list1
+                    .&&.
+                    checkListEqual parsedList2 list2
+            Left _ -> property False
+
+        where
+
+        prsr_1 = (P.takeWhile (== 0) FL.toList)
+
+        prsr_2 = (P.takeWhile (== 1) FL.toList)
+
+        prsr = P.deintercalate concatFold prsr_1 concatFold prsr_2
+
+        concatFold = 
+            FL.Fold 
+            (\concatList curr_list -> return $ concatList ++ curr_list) 
+            (return []) 
+            return
+
+        partition prd (x : xs) =
+            if prd x
+            then (x : trueList, falseList)
+            else (trueList, x : falseList)
+
+            where (trueList, falseList) = partition prd xs
+        partition _ [] = ([], [])
+
+deintercalate2 :: Property
+deintercalate2 =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        case S.parseD prsr (S.fromList ls) of
+            Right parsed_list_tuple ->
+                let
+                    (parsedList1, parsedList2) = parsed_list_tuple
+                    (list1, list2) = partitionAlternate (== 0) ls
+                in
+                    checkListEqual parsedList1 list1
+                    .&&.
+                    checkListEqual parsedList2 list2
+            Left _ -> property False
+
+        where
+
+        prsr_1 = P.satisfy (== 0)
+
+        prsr_2 = P.satisfy (== 1)
+
+        prsr = P.deintercalate FL.toList prsr_1 FL.toList prsr_2
+
+        partitionAlternate prd list = helper list False
+            where
+
+            helper (x : xs) prevRes =
+                if prd x == prevRes
+                then ([], [])
+                else
+                    if prd x 
+                    then (x : trueList, falseList)
+                    else (trueList, x : falseList)
+
+                where (trueList, falseList) = helper xs (not prevRes)
+            helper [] _ = ([], [])
 
 shortestPass :: Property
 shortestPass =
@@ -517,6 +657,10 @@ main =
         prop "P.takeWhile1 = Prelude.takeWhile if taken something, else check why failed" takeWhile1
         prop "P.sliceSepBy = Prelude.takeWhile (not . predicate)" sliceSepBy
         prop "P.sliceSepByMax = Prelude.take n (Prelude.takeWhile (not . predicate)" sliceSepByMax
+        prop "P.sliceEndWith = takeWhileAndFirstFail (not . predicate)" sliceEndWith
+        prop "P.sliceBeginWith predicate = takeWhileOrFirst (not . predicate)" sliceBeginWith
+        prop "P.wordBy = takeFirstFails" wordBy
+        prop "P.groupBy = takeWhileCmpFirst" groupBy
         prop "parse 0, then 1, else fail" splitWith
         prop "fail due to die as left parser" splitWithFailLeft
         prop "fail due to die as right parser" splitWithFailRight
@@ -525,6 +669,8 @@ main =
         prop "fail due to die as left parser" teeWithFailLeft
         prop "fail due to die as right parser" teeWithFailRight
         prop "fail due to die as both parsers" teeWithFailBoth
+        prop "P.deintercalate concatFold prsr_1 concatFold prsr_2 = partition" deintercalate1
+        prop "P.deintercalate FL.toList prsr_1 FL.toList prsr_2 = partitionAlternate" deintercalate2
         prop "P.takeWhile (<= half_mid_value) = Prelude.takeWhile half_mid_value" shortestPass
         prop "pass even if die is left parser" shortestPassLeft
         prop "pass even if die is right parser" shortestPassRight

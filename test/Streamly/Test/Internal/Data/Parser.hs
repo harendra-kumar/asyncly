@@ -10,7 +10,7 @@ import Test.Hspec(Spec, hspec, describe)
 import qualified Test.Hspec as H
 import Test.Hspec.QuickCheck
 import Test.QuickCheck (arbitrary, forAll, choose, elements, Property,
-                        property, listOf, vectorOf, counterexample, Gen)
+                        property, listOf, vectorOf, counterexample, Gen, (.&&.))
 
 import Test.QuickCheck.Monadic (monadicIO, PropertyM, assert, monitor)
 import Control.Exception (SomeException(..), displayException)
@@ -122,7 +122,8 @@ parserFail =
 peekPass :: Property
 peekPass =
     forAll (chooseInt (1, max_length)) $ \list_length ->
-        forAll (vectorOf list_length (chooseInt (min_value, max_value))) $ \ls ->
+        forAll 
+            (vectorOf list_length (chooseInt (min_value, max_value))) $ \ls ->
             case S.parse P.peek (S.fromList ls) of
                 Right head_value -> case ls of
                     head_ls : _ -> head_value == head_ls
@@ -144,7 +145,8 @@ eofPass =
 eofFail :: Property
 eofFail =
     forAll (chooseInt (1, max_length)) $ \list_length ->
-        forAll (vectorOf list_length (chooseInt (min_value, max_value))) $ \ls ->
+        forAll 
+            (vectorOf list_length (chooseInt (min_value, max_value))) $ \ls ->
             case S.parse P.eof (S.fromList ls) of
                 Right _ -> False
                 Left _ -> True
@@ -176,21 +178,45 @@ satisfy =
 
 -- Sequence Parsers Tests
 
+takeBetweenPass :: Property
+takeBetweenPass =
+    forAll (listOf (chooseInt (min_value, max_value))) $ \ls ->
+        let len = Prelude.length ls
+        in
+        forAll (chooseInt (min_value, len)) $ \low ->
+            forAll (chooseInt (low, max_value)) $ \high ->
+                case S.parse (P.takeBetween low high FL.toList) (S.fromList ls) of
+                    Right parsed_list ->
+                        checkListEqual parsed_list (Prelude.take high ls)
+                    Left _ -> property False
+
+takeBetween :: Property
+takeBetween =
+    forAll (listOf (chooseInt (min_value, max_value))) $ \ls ->
+        forAll (chooseInt (min_value, max_value)) $ \low ->
+            forAll (chooseInt (low, max_value)) $ \high ->
+                case S.parse (P.takeBetween low high FL.toList) (S.fromList ls) of
+                    Right parsed_list ->
+                        checkListEqual parsed_list (Prelude.take high ls)
+                    Left _ -> property $ Prelude.length ls < low
+
 take :: Property
 take =
     forAll (chooseInt (min_value, max_value)) $ \n ->
         forAll (listOf (chooseInt (min_value, max_value))) $ \ls ->
             case S.parse (P.take n FL.toList) (S.fromList ls) of
-                Right parsed_list -> checkListEqual parsed_list (Prelude.take n ls)
+                Right parsed_list -> 
+                    checkListEqual parsed_list (Prelude.take n ls)
                 Left _ -> property False
 
 takeEQPass :: Property
 takeEQPass =
     forAll (chooseInt (min_value, max_value)) $ \n ->
-        forAll (chooseInt (n, max_value)) $ \list_length ->
-            forAll (vectorOf list_length (chooseInt (min_value, max_value))) $ \ls ->
+        forAll (chooseInt (n, max_value)) $ \len ->
+            forAll (vectorOf len (chooseInt (min_value, max_value))) $ \ls ->
                 case S.parse (P.takeEQ n FL.toList) (S.fromList ls) of
-                    Right parsed_list -> checkListEqual parsed_list (Prelude.take n ls)
+                    Right parsed_list -> 
+                        checkListEqual parsed_list (Prelude.take n ls)
                     Left _ -> property False
 
 takeEQ :: Property
@@ -211,8 +237,8 @@ takeEQ =
 takeGEPass :: Property
 takeGEPass =
     forAll (chooseInt (min_value, max_value)) $ \n ->
-        forAll (chooseInt (n, max_value)) $ \list_length ->
-            forAll (vectorOf list_length (chooseInt (min_value, max_value))) $ \ls ->
+        forAll (chooseInt (n, max_value)) $ \len ->
+            forAll (vectorOf len (chooseInt (min_value, max_value))) $ \ls ->
                 case S.parse (P.takeGE n FL.toList) (S.fromList ls) of
                     Right parsed_list -> checkListEqual parsed_list ls
                     Left _ -> property False
@@ -305,11 +331,31 @@ takeProperties =
 --                         where
 --                             list_length = Prelude.length ls
 
+takeWhileP1 :: Property
+takeWhileP1 =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        forAll (chooseInt (min_value, max_value)) $ \n ->
+            let
+                predicate = (== 1)
+
+                prsr = P.takeWhileP predicate $ P.take n FL.toList
+
+                takeWhileTillLen maxLen prd list = 
+                    Prelude.take maxLen $ Prelude.takeWhile prd list
+            in
+                case S.parse prsr (S.fromList ls) of
+                    Right parsed_list -> 
+                        checkListEqual 
+                        parsed_list
+                        (takeWhileTillLen n predicate ls)
+                    Left _ -> property False
+
 takeWhile :: Property
 takeWhile =
     forAll (listOf (chooseInt (0, 1))) $ \ ls ->
         case S.parse (P.takeWhile predicate FL.toList) (S.fromList ls) of
-            Right parsed_list -> checkListEqual parsed_list (Prelude.takeWhile predicate ls)
+            Right parsed_list -> 
+                checkListEqual parsed_list (Prelude.takeWhile predicate ls)
             Left _ -> property False
         where
             predicate = (== 0)
@@ -322,7 +368,9 @@ takeWhile1 =
                 [] -> property False
                 (x : _) ->
                     if predicate x then
-                        checkListEqual parsed_list (Prelude.takeWhile predicate ls)
+                        checkListEqual 
+                        parsed_list 
+                        (Prelude.takeWhile predicate ls)
                     else
                         property False
             Left _ -> case ls of
@@ -331,14 +379,52 @@ takeWhile1 =
         where
             predicate = (== 0)
 
+sliceSepByP1 :: Property
+sliceSepByP1 =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        forAll (chooseInt (min_value, max_value)) $ \n ->
+            let
+                predicate = (== 1)
+
+                prsr = P.sliceSepByP predicate $ P.take n FL.toList
+
+                takeWhileTillLen maxLen prd list = 
+                    Prelude.take maxLen $ Prelude.takeWhile (not . prd) list
+            in
+                case S.parse prsr (S.fromList ls) of
+                    Right parsed_list -> 
+                        checkListEqual 
+                        parsed_list
+                        (takeWhileTillLen n predicate ls)
+                    Left _ -> property False
+
 sliceSepBy :: Property
 sliceSepBy =
     forAll (listOf (chooseInt (0, 1))) $ \ls ->
         case S.parse (P.sliceSepBy predicate FL.toList) (S.fromList ls) of
-            Right parsed_list -> checkListEqual parsed_list (Prelude.takeWhile (not . predicate) ls)
+            Right parsed_list -> 
+                checkListEqual 
+                parsed_list 
+                (Prelude.takeWhile (not . predicate) ls)
             Left _ -> property False
         where
             predicate = (== 1)
+
+sliceSepWith :: Property
+sliceSepWith =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        case S.parse (P.sliceSepWith predicate FL.toList) (S.fromList ls) of
+            Right parsed_list -> 
+                checkListEqual parsed_list $ takeFirstOrUntilSep predicate ls
+            Left _ -> property False
+        where
+            predicate = (== 1)
+
+            takeFirstOrUntilSep prd (x : xs) =
+                if prd x
+                then [x]
+                else x : Prelude.takeWhile (not . prd) xs
+            takeFirstOrUntilSep _ [] = []
 
 -- sliceSepByMax :: Property
 -- sliceSepByMax =
@@ -349,6 +435,374 @@ sliceSepBy =
 --                 Left _ -> property False
 --             where
 --                 predicate = (== 1)
+
+sliceEndWith1 :: Property
+sliceEndWith1 =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        case S.parse (P.sliceEndWith predicate FL.toList) (S.fromList ls) of
+            Right parsed_list -> 
+                checkListEqual 
+                parsed_list 
+                (takeWhileAndFirstFail (not . predicate) ls)
+            Left _ -> property False
+        where
+            predicate = (== 1)
+
+            takeWhileAndFirstFail prd (x : xs) =
+                if prd x 
+                then x : takeWhileAndFirstFail prd xs
+                else [x]
+            takeWhileAndFirstFail _ [] = []
+
+sliceEndWith2 :: Property
+sliceEndWith2 =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        let
+            strm = S.fromList ls
+
+            predicate = (==0)
+
+            eitherParsedList = 
+                S.toList $ 
+                    S.parseMany (P.sliceEndWith predicate FL.toList) strm
+
+            eitherSplitList =
+                case ls of
+                    [] -> return [[]]
+                    _ ->
+                        if last ls == 0
+                        then S.toList $ S.append strm1 (S.fromList [[]])
+                        else S.toList strm1
+
+                        where 
+
+                        strm1 = S.splitWithSuffix predicate FL.toList strm
+        in
+            case eitherParsedList of
+                Left _ -> property False
+                Right parsedList ->
+                    case eitherSplitList of
+                        Left _ -> property False
+                        Right splitList -> checkListEqual parsedList splitList
+
+sliceBeginWith :: Property
+sliceBeginWith =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        case S.parse (P.sliceBeginWith predicate FL.toList) (S.fromList ls) of
+            Right parsed_list -> 
+                checkListEqual parsed_list (takeWhileOrFirst (not . predicate) ls)
+            Left _ -> property False
+        where
+            predicate = (== 1)
+
+            takeWhileOrFirst prd (x : xs) = x : Prelude.takeWhile prd xs
+            takeWhileOrFirst _ [] = []
+
+escapedSliceSepBy :: Property
+escapedSliceSepBy =
+    forAll (listOf (chooseInt (min_value, max_value))) $ \ls ->
+        let
+            isSep = even
+
+            isEsc x = x `mod` 6 == 0
+
+            prsr = P.escapedSliceSepBy isSep isEsc FL.toList
+
+            escapeSep maybePrevEsc [] =
+                case maybePrevEsc of
+                    Nothing -> []
+                    Just prevEsc -> [prevEsc]
+            escapeSep maybePrevEsc (x : xs) =
+                case maybePrevEsc of
+                    Nothing ->
+                        if isEsc x
+                        then escapeSep (Just x) xs
+                        else
+                            if isSep x
+                            then []
+                            else x : escapeSep Nothing xs
+                    Just prevEsc ->
+                        if isSep x || isEsc x
+                        then x : escapeSep Nothing xs
+                        else
+                            if isSep prevEsc
+                            then []
+                            else prevEsc : x : escapeSep Nothing xs
+        in
+            case S.parse prsr (S.fromList ls) of
+                Right parsed_list -> checkListEqual parsed_list $ escapeSep Nothing ls
+                _ -> property False
+
+escapedFrameBy :: Property
+escapedFrameBy =
+    forAll (listOf (chooseInt (min_value, max_value))) $ \ls ->
+        let
+            isBegin = (== 0)
+
+            isEnd = (== 1)
+
+            isEsc = (== 2)
+
+            prsr = P.escapedFrameBy isBegin isEnd isEsc FL.toList
+
+            checkPass (x : xs) maybePrevEsc openMinusClose =
+                case maybePrevEsc of
+                    Nothing ->
+                        if isEsc x
+                        then checkPass xs (Just x) openMinusClose
+                        else
+                            if isBegin x
+                            then checkPass xs Nothing (openMinusClose + 1)
+                            else
+                                if isEnd x
+                                then
+                                    case openMinusClose of
+                                        0 -> False
+                                        1 -> True
+                                        _ -> 
+                                            checkPass 
+                                            xs 
+                                            Nothing
+                                            (openMinusClose - 1)
+                                else
+                                    checkPass xs Nothing openMinusClose
+                    Just _ -> checkPass xs Nothing openMinusClose
+            checkPass [] _ _ = False
+
+            escapeFrame begin end escape l =
+                let
+                    helper (x : xs) maybePrevEsc openMinusClose =
+                        case maybePrevEsc of
+                            Nothing ->
+                                if escape x
+                                then helper xs (Just x) openMinusClose
+                                else
+                                    if begin x
+                                    then helper xs Nothing (openMinusClose + 1)
+                                    else
+                                        if end x
+                                        then
+                                            if openMinusClose - 1 == 0
+                                            then []
+                                            else 
+                                                helper 
+                                                xs 
+                                                Nothing 
+                                                (openMinusClose - 1)
+                                        else
+                                            x : helper xs Nothing openMinusClose
+                            Just prevEsc ->
+                                if escape x || begin x || end x
+                                then x : helper xs Nothing openMinusClose
+                                else
+                                    prevEsc : x : helper xs Nothing openMinusClose
+                    helper [] _ _ = error "Cannot Reach Here"
+                in
+                    helper l Nothing (0 :: Int)           
+        in
+            case S.parse prsr (S.fromList ls) of
+                Right parsed_list ->
+                    if checkPass ls Nothing (0 :: Int)
+                    then checkListEqual parsed_list $
+                        escapeFrame isBegin isEnd isEsc ls
+                    else property False
+                Left _ ->
+                    if checkPass ls Nothing (0 :: Int)
+                    then property False
+                    else property True
+
+escapedFrameByPass :: Property
+escapedFrameByPass =
+    forAll (listOf (chooseInt (min_value, max_value))) $ \list ->
+        let
+            ls = (0 : list) ++ (Prelude.replicate (Prelude.length list + 1) 1)
+
+            isBegin = (== 0)
+
+            isEnd = (== 1)
+
+            isEsc = (== 2)
+
+            prsr = P.escapedFrameBy isBegin isEnd isEsc FL.toList
+
+            escapeFrame begin end escape l =
+                let
+                    helper (x : xs) maybePrevEsc openMinusClose =
+                        case maybePrevEsc of
+                            Nothing ->
+                                if escape x
+                                then helper xs (Just x) openMinusClose
+                                else
+                                    if begin x
+                                    then helper xs Nothing (openMinusClose + 1)
+                                    else
+                                        if end x
+                                        then
+                                            if openMinusClose - 1 == 0
+                                            then []
+                                            else 
+                                                helper 
+                                                xs 
+                                                Nothing 
+                                                (openMinusClose - 1)
+                                        else
+                                            x : helper xs Nothing openMinusClose
+                            Just prevEsc ->
+                                if escape x || begin x || end x
+                                then x : helper xs Nothing openMinusClose
+                                else
+                                    prevEsc : x : helper xs Nothing openMinusClose
+                    helper [] _ _ = error "Cannot Reach Here"
+                in
+                    helper l Nothing (0 :: Int)           
+        in
+            case S.parse prsr (S.fromList ls) of
+                Right parsed_list -> 
+                    checkListEqual parsed_list $ escapeFrame isBegin isEnd isEsc ls
+                _ -> property False
+
+escapedFrameByFail1 :: Property
+escapedFrameByFail1 =
+    let
+        msg = "Element found to satisfy more than one predicate"
+
+        isBegin = (== 0)
+
+        isEnd = (== 0)
+
+        isEsc = (== 2)
+
+        prsr = P.escapedFrameBy isBegin isEnd isEsc FL.toList
+
+        ls = [0 :: Int]
+    in
+        case S.parse prsr (S.fromList ls) of
+            Right _ -> property False
+            Left err -> property $ (displayException err == msg)
+
+escapedFrameByFail2 :: Property
+escapedFrameByFail2 =
+    let
+        msg = "Element found to satisfy more than one predicate"
+
+        isBegin = (== 0)
+
+        isEnd = (== 1)
+
+        isEsc = (== 1)
+
+        prsr = P.escapedFrameBy isBegin isEnd isEsc FL.toList
+
+        ls = [1 :: Int]
+    in
+        case S.parse prsr (S.fromList ls) of
+            Right _ -> property False
+            Left err -> property $ (displayException err == msg)
+
+escapedFrameByFail3 :: Property
+escapedFrameByFail3 =
+    let
+        msg = "Element found to satisfy more than one predicate"
+
+        isBegin = (== 2)
+
+        isEnd = (== 1)
+
+        isEsc = (== 2)
+
+        prsr = P.escapedFrameBy isBegin isEnd isEsc FL.toList
+
+        ls = [2 :: Int]
+    in
+        case S.parse prsr (S.fromList ls) of
+            Right _ -> property False
+            Left err -> property $ (displayException err == msg)
+
+wordBy1 :: Property
+wordBy1 =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        case S.parse (P.wordBy predicate FL.toList) (S.fromList ls) of
+            Right parsed_list ->
+                checkListEqual parsed_list (takeFirstFails predicate ls)
+            Left _ -> property False
+        where
+            predicate = (== 1)
+
+            takeFirstFails prd list =
+                Prelude.takeWhile (not . prd) (removePass prd list)
+
+                where
+
+                removePass prd1 (x : xs) =
+                    if prd1 x
+                    then removePass prd1 xs
+                    else (x : xs)
+                removePass _ [] = []
+
+wordBy2 :: Property
+wordBy2 =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        let
+            strm = S.fromList ls
+
+            predicate = (==0)
+
+            eitherParsedList = 
+                S.toList $ 
+                    S.parseMany (P.wordBy predicate FL.toList) strm
+
+            eitherSplitList =
+                if Prelude.takeWhile predicate ls == ls
+                then return [[]]
+                else S.toList $
+                    S.wordsBy predicate (FL.toList) strm
+        in
+            case eitherParsedList of
+                Left _ -> property False
+                Right parsedList ->
+                    case eitherSplitList of
+                        Left _ -> property False
+                        Right splitList -> checkListEqual parsedList splitList
+
+groupBy1 :: Property
+groupBy1 =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        case S.parse (P.groupBy cmp FL.toList) (S.fromList ls) of
+            Right parsed_list -> 
+                checkListEqual parsed_list (takeWhileCmpFirst cmp ls)
+            Left _ -> property False
+        where
+            cmp = (==)
+
+            takeWhileCmpFirst comp list =
+                case list of
+                    [] -> []
+                    (x : xs) -> 
+                        x : Prelude.takeWhile (\curr -> x `comp` curr) xs
+
+groupBy2 :: Property
+groupBy2 =
+    forAll (listOf (chooseInt (min_value, max_value))) $ \ls ->
+        let
+            strm = S.fromList ls
+
+            cmp = (>)
+
+            eitherParsedList = 
+                S.toList $ 
+                    S.parseMany (P.groupBy (\x y -> cmp y x) FL.toList) strm
+
+            eitherGroupList =
+                case ls of
+                    [] -> return [[]]
+                    _ -> S.toList $ S.groupsBy cmp (FL.toList) strm
+        in
+            case eitherParsedList of
+                Left _ -> property False
+                Right parsedList ->
+                    case eitherGroupList of
+                        Left _ -> property False
+                        Right groupList -> checkListEqual parsedList groupList
 
 -- splitWithPass :: Property
 -- splitWithPass =
@@ -408,17 +862,77 @@ sliceSepBy =
 --         Right _ -> False
 --         Left _ -> True)
 
--- deintercalate :: Property
--- deintercalate =
---     forAll (listOf (chooseInt (0, 1))) $ \ls ->
---         case S.parse (P.deintercalate concatFold prsr_1 concatFold prsr_2) (S.fromList ls) of
---             Right parsed_list_tuple -> parsed_list_tuple == (partition (== 0) ls)
---             Left _ -> False
+deintercalate1 :: Property
+deintercalate1 =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        case S.parse prsr (S.fromList ls) of
+            Right parsed_list_tuple ->
+                let
+                    (parsedList1, parsedList2) = parsed_list_tuple
+                    (list1, list2) = partition (== 0) ls
+                in
+                    checkListEqual parsedList1 list1
+                    .&&.
+                    checkListEqual parsedList2 list2
+            Left _ -> property False
 
---         where
---             prsr_1 = (P.takeWhile (== 0) FL.toList)
---             prsr_2 = (P.takeWhile (== 1) FL.toList)
---             concatFold = FL.Fold (\concatList curr_list -> return $ concatList ++ curr_list) (return []) return
+        where
+
+        prsr_1 = (P.takeWhile (== 0) FL.toList)
+
+        prsr_2 = (P.takeWhile (== 1) FL.toList)
+
+        prsr = P.deintercalate concatFold prsr_1 concatFold prsr_2
+
+        concatFold = 
+            FL.Fold 
+            (\concatList curr_list -> return $ concatList ++ curr_list) 
+            (return []) 
+            return
+
+        partition prd (x : xs) =
+            if prd x
+            then (x : trueList, falseList)
+            else (trueList, x : falseList)
+
+            where (trueList, falseList) = partition prd xs
+        partition _ [] = ([], [])
+
+deintercalate2 :: Property
+deintercalate2 =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        case S.parse prsr (S.fromList ls) of
+            Right parsed_list_tuple ->
+                let
+                    (parsedList1, parsedList2) = parsed_list_tuple
+                    (list1, list2) = partitionAlternate (== 0) ls
+                in
+                    checkListEqual parsedList1 list1
+                    .&&.
+                    checkListEqual parsedList2 list2
+            Left _ -> property False
+
+        where
+
+        prsr_1 = P.satisfy (== 0)
+
+        prsr_2 = P.satisfy (== 1)
+
+        prsr = P.deintercalate FL.toList prsr_1 FL.toList prsr_2
+
+        partitionAlternate prd list = helper list False
+            where
+
+            helper (x : xs) prevRes =
+                if prd x == prevRes
+                then ([], [])
+                else
+                    if prd x 
+                    then (x : trueList, falseList)
+                    else (trueList, x : falseList)
+
+                where (trueList, falseList) = helper xs (not prevRes)
+            helper [] _ = ([], [])
 
 -- shortestPass :: Property
 -- shortestPass =
@@ -474,6 +988,8 @@ main =
         prop "check first element exists and satisfies predicate" satisfy
 
     describe "test for sequence parser" $ do
+        prop "P.takeBetween low high = Prelude.take high when low <= len" takeBetweenPass
+        prop "P.takeBetween low high = Prelude.take high when low <= len and fail otherwise" takeBetween
         prop "P.take = Prelude.take" Main.take
         prop "P.takeEQ = Prelude.take when len >= n" takeEQPass
         prop "P.takeEQ = Prelude.take when len >= n and fail otherwise" Main.takeEQ
@@ -482,10 +998,26 @@ main =
         -- prop "lookAhead . take n >> lookAhead . take n = lookAhead . take n" lookAheadPass
         -- prop "Fail when stream length exceeded" lookAheadFail
         -- prop "lookAhead . take n >> lookAhead . take n = lookAhead . take n, else fail" lookAhead
+        prop "P.takeWhileP prd P.take = takeWhileMaxLen prd" takeWhileP1
         prop "P.takeWhile = Prelude.takeWhile" Main.takeWhile
         prop "P.takeWhile = Prelude.takeWhile if taken something, else check why failed" takeWhile1
+        prop "P.sliceSepByP prd P.take = takeWhileMaxLen (not . prd)" sliceSepByP1
         prop "P.sliceSepBy = Prelude.takeWhile (not . predicate)" sliceSepBy
         -- prop "test for sliceSepByMax function" sliceSepByMax
+        prop "P.sliceSepWith = takeFirstOrUntilSep" sliceSepWith
+        prop "P.sliceEndWith = takeWhileAndFirstFail (not . predicate)" sliceEndWith1
+        prop "similar to S.splitWithSuffix pred f = S.splitParse (PR.sliceEndWith pred f)" sliceEndWith2
+        prop "P.sliceBeginWith predicate = takeWhileOrFirst (not . predicate)" sliceBeginWith
+        prop "P.escapedSliceSepBy = escapeSep Nothing" escapedSliceSepBy
+        prop "P.escapedFrameBy = escapeFrame - when pass" escapedFrameBy
+        prop "P.escapedFrameBy = escapeFrame - always pass" escapedFrameByPass
+        prop "begin = end" escapedFrameByFail1
+        prop "end = escape" escapedFrameByFail2
+        prop "escape = begin" escapedFrameByFail3
+        prop "P.wordBy = takeFirstFails" wordBy1
+        prop "similar to S.wordsBy pred f = S.splitParse (PR.wordBy pred f)" wordBy2
+        prop "P.groupBy = takeWhileCmpFirst" groupBy1
+        prop "S.groupsBy cmp f = S.splitParse (PR.groupBy cmp f)" groupBy2
         -- prop "pass test for splitWith function" splitWithPass
         -- prop "left fail test for splitWith function" splitWithFailLeft
         -- prop "right fail test for splitWith function" splitWithFailRight
@@ -494,7 +1026,8 @@ main =
         -- prop "left fail test for teeWith function" teeWithFailLeft
         -- prop "right fail test for teeWith function" teeWithFailRight
         -- prop "both fail test for teeWith function" teeWithFailBoth
-        -- prop "test for deintercalate function" deintercalate
+        prop "P.deintercalate concatFold prsr_1 concatFold prsr_2 = partition" deintercalate1
+        prop "P.deintercalate FL.toList prsr_1 FL.toList prsr_2 = partitionAlternate" deintercalate2
         -- prop "pass test for shortest function" shortestPass
         -- prop "left fail test for shortest function" shortestFailLeft
         -- prop "right fail test for shortest function" shortestFailRight

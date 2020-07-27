@@ -46,7 +46,7 @@ module Streamly.Internal.Data.Parser.ParserD
     --
     -- Grab a sequence of input elements without inspecting them
     , take
-    -- , takeBetween
+    , takeBetween
     -- , takeLE -- take   -- takeBetween 0 n
     -- , takeLE1 -- take1 -- takeBetween 1 n
     , takeEQ -- takeBetween n n
@@ -54,14 +54,18 @@ module Streamly.Internal.Data.Parser.ParserD
 
     -- Grab a sequence of input elements by inspecting them
     , lookAhead
+    , takeWhileP
     , takeWhile
     , takeWhile1
+    , sliceSepByP
     , sliceSepBy
     , sliceSepByMax
+    , escapedSliceSepBy
+    , escapedFrameBy
     -- , sliceSepByBetween
     , sliceEndWith
     , sliceBeginWith
-    -- , sliceSepWith
+    , sliceSepWith
     --
     -- , frameSepBy -- parse frames escaped by an escape char/sequence
     -- , frameEndWith
@@ -159,7 +163,7 @@ module Streamly.Internal.Data.Parser.ParserD
 where
 
 import Control.Exception (assert)
-import Control.Monad.Catch (MonadCatch, MonadThrow(..))
+import Control.Monad.Catch (MonadCatch, MonadThrow(..), catchAll)
 import Prelude
        hiding (any, all, take, takeWhile, sequence, concatMap)
 
@@ -328,6 +332,46 @@ take n (Fold fstep finitial fextract) = Parser step initial extract
 
     extract (Tuple' _ r) = fextract r
 
+--
+-- | See 'Streamly.Internal.Data.Parser.takeBetween'.
+--
+-- /Internal/
+--
+{-# INLINE takeBetween #-}
+takeBetween :: MonadCatch m => Int -> Int -> Fold m a b -> Parser m a b
+takeBetween low high (Fold fstep finitial fextract) = 
+    
+    Parser step initial extract
+
+    where
+    
+    initial = Tuple' 0 <$> finitial
+
+    step (Tuple' numTaken s) a =
+        if high == 0
+        then Done 1 <$> fextract s
+        else
+            do
+                nextS <- fstep s a
+                let nextTaken = numTaken + 1
+                if nextTaken < low 
+                then return $ Continue 0 (Tuple' nextTaken nextS)
+                else
+                    if nextTaken < high
+                    then return $ Partial 0 (Tuple' nextTaken nextS)
+                    else Done 0 <$> fextract nextS
+
+    extract (Tuple' numTaken s) =
+        if numTaken >= low
+        then fextract s
+        else throwM $ ParseError err
+
+        where
+        
+        err =
+               "takeBetween: Expecting alteast " ++ show low
+            ++ " elements, got " ++ show numTaken
+
 -- | See 'Streamly.Internal.Data.Parser.takeEQ'.
 --
 -- /Internal/
@@ -398,6 +442,27 @@ takeGE cnt (Fold fstep finitial fextract) = Parser step initial extract
             then return x
             else throwM $ ParseError err
 
+-- | See 'Streamly.Internal.Data.Parser.takeWhileP'.
+--
+-- /Internal/
+--
+{-# INLINE takeWhileP #-}
+takeWhileP :: MonadCatch m => (a -> Bool) -> Parser m a b -> Parser m a b
+takeWhileP predicate (Parser stepP initialP extractP) = 
+
+    Parser step initial extract
+
+    where
+    
+    initial = initialP
+
+    step s a =
+        if not $ predicate a
+        then Done 1 <$> extractP s
+        else stepP s a
+    
+    extract = extractP
+
 -- | See 'Streamly.Internal.Data.Parser.takeWhile'.
 --
 -- /Internal/
@@ -448,6 +513,27 @@ takeWhile1 predicate (Fold fstep finitial fextract) =
     extract Nothing = throwM $ ParseError "takeWhile1: end of input"
     extract (Just s) = fextract s
 
+-- | See 'Streamly.Internal.Data.Parser.sliceSepByP'.
+--
+-- /Internal/
+--
+{-# INLINE sliceSepByP #-}
+sliceSepByP :: MonadCatch m => (a -> Bool) -> Parser m a b -> Parser m a b
+sliceSepByP predicate (Parser stepP initialP extractP) = 
+
+    Parser step initial extract
+
+    where
+    
+    initial = initialP
+
+    step s a =
+        if predicate a
+        then Done 0 <$> extractP s
+        else stepP s a
+    
+    extract = extractP
+
 -- | See 'Streamly.Internal.Data.Parser.sliceSepBy'.
 --
 -- /Internal/
@@ -465,25 +551,76 @@ sliceSepBy predicate (Fold fstep finitial fextract) =
         then Partial 0 <$> fstep s a
         else Done 0 <$> fextract s
 
+-- | See 'Streamly.Internal.Data.Parser.sliceSepWith'.
+--
+-- /Internal/
+--
+{-# INLINE sliceSepWith #-}
+sliceSepWith :: Monad m => (a -> Bool) -> Fold m a b -> Parser m a b
+sliceSepWith predicate (Fold fstep finitial fextract) =
+
+    Parser step initial extract
+
+    where
+    
+    initial = Tuple' True <$> finitial
+
+    step (Tuple' isFirstElement s) a =
+        if predicate a
+        then
+            if isFirstElement
+            then
+                do
+                    nextS <- fstep s a
+                    Done 0 <$> fextract nextS
+            else
+                Done 1 <$> fextract s
+        else
+            do
+                nextS <- fstep s a
+                return $ Partial 0 (Tuple' False nextS)
+
+    extract (Tuple' _ s) = fextract s
+
 -- | See 'Streamly.Internal.Data.Parser.sliceEndWith'.
 --
--- /Unimplemented/
+-- /Internal/
 --
-{-# INLINABLE sliceEndWith #-}
-sliceEndWith ::
-    -- Monad m =>
-    (a -> Bool) -> Fold m a b -> Parser m a b
-sliceEndWith = undefined
+{-# INLINE sliceEndWith #-}
+sliceEndWith :: Monad m => (a -> Bool) -> Fold m a b -> Parser m a b
+sliceEndWith predicate (Fold fstep finitial fextract) =
+    Parser step initial fextract
+
+    where
+
+    initial = finitial
+    step s a =
+        if not (predicate a)
+        then Partial 0 <$> fstep s a
+        else Done 0 <$> (fstep s a >>= fextract)
 
 -- | See 'Streamly.Internal.Data.Parser.sliceBeginWith'.
 --
--- /Unimplemented/
+-- /Internal/
 --
-{-# INLINABLE sliceBeginWith #-}
-sliceBeginWith ::
-    -- Monad m =>
-    (a -> Bool) -> Fold m a b -> Parser m a b
-sliceBeginWith = undefined
+{-# INLINE sliceBeginWith #-}
+sliceBeginWith :: Monad m => (a -> Bool) -> Fold m a b -> Parser m a b
+sliceBeginWith predicate (Fold fstep finitial fextract) = 
+    Parser step initial extract
+
+    where
+    
+    initial = (Tuple' True) <$> finitial
+
+    step (Tuple' isFirstElement s) a =
+        if not (predicate a) || isFirstElement
+        then
+            do
+                nextS <- fstep s a
+                return $ Partial 0 (Tuple' False nextS)
+        else Done 1 <$> fextract s
+
+    extract (Tuple' _ s) = fextract s
 
 -- | See 'Streamly.Internal.Data.Parser.sliceSepByMax'.
 --
@@ -512,25 +649,199 @@ sliceSepByMax predicate cnt (Fold fstep finitial fextract) =
 
     extract (Tuple' _ r) = fextract r
 
+-- | See 'Streamly.Internal.Data.Parser.escapedSliceSepBy'.
+--
+-- /Internal/
+--
+{-# INLINE escapedSliceSepBy #-}
+escapedSliceSepBy :: 
+    MonadCatch m => (a -> Bool) -> (a -> Bool) -> Fold m a b -> Parser m a b
+escapedSliceSepBy isSep isEsc (Fold fstep finitial fextract) =
+
+    Parser step initial extract
+
+    where
+    
+    initial = Tuple' Nothing <$> finitial
+
+    step (Tuple' maybePrevEscape s) a =
+        case maybePrevEscape of
+            Nothing ->
+                if isEsc a
+                then return $ Partial 0 (Tuple' (Just a) s)
+                else
+                    if isSep a
+                    then Done 0 <$> fextract s
+                    else
+                        do
+                            nextS <- fstep s a
+                            return $ Partial 0 (Tuple' Nothing nextS)
+            Just prevEsc ->
+                if isEsc a || isSep a
+                then
+                    do
+                        nextS <- fstep s a
+                        return $ Partial 0 (Tuple' Nothing nextS)
+                else
+                    if isSep prevEsc
+                    then Done 1 <$> fextract s
+                    else 
+                        do
+                            s1 <- fstep s prevEsc
+                            s2 <- fstep s1 a
+                            return $ Partial 0 (Tuple' Nothing s2)
+
+    extract (Tuple' maybePrevEscape s) =
+        case maybePrevEscape of
+            Nothing -> fextract s
+            Just prevEsc ->
+                do
+                    nextS <- fstep s prevEsc
+                    fextract nextS
+
+-- | See 'Streamly.Internal.Data.Parser.escapedFrameBy'.
+--
+-- /Internal/
+--
+{-# INLINE escapedFrameBy #-}
+escapedFrameBy ::
+    MonadCatch m 
+    => (a -> Bool)
+    -> (a -> Bool)
+    -> (a -> Bool)
+    -> Fold m a b
+    -> Parser m a b
+escapedFrameBy begin end escape (Fold fstep finitial fextract) =
+
+    Parser step initial extract
+
+    where
+    
+    initial = Tuple3' Nothing (0 :: Int) <$> finitial
+
+    step (Tuple3' maybePrevEsc openMinusClose s) a =
+        if (begin a && end a) || (end a && escape a) || (escape a && begin a)
+            then return $ 
+                Error "Element found to satisfy more than one predicate"
+        else
+            case maybePrevEsc of
+                Nothing ->
+                    if escape a
+                    then
+                        return $ 
+                            Continue
+                            0 
+                            (Tuple3' (Just a) openMinusClose s)
+                    else
+                        if begin a
+                        then
+                            return $
+                                Continue
+                                0 
+                                (Tuple3' Nothing (openMinusClose + 1) s)
+                        else
+                            if end a
+                            then
+                                case openMinusClose of
+                                    0 -> return $ Error "Found end before any begin"
+                                    1 -> Done 0 <$> fextract s
+                                    _ ->
+                                        return $ 
+                                            Continue
+                                            0
+                                            (Tuple3'
+                                            Nothing
+                                            (openMinusClose - 1)
+                                            s)
+                            else
+                                do
+                                    nextS <- fstep s a
+                                    return $
+                                        Continue
+                                        0
+                                        (Tuple3' Nothing openMinusClose nextS)
+                (Just prevEsc) ->
+                    if escape a || begin a || end a
+                    then
+                        do
+                            nextS <- fstep s a
+                            return $
+                                Continue 0 (Tuple3' Nothing openMinusClose nextS)
+                    else
+                        do
+                            s1 <- fstep s prevEsc
+                            s2 <- fstep s1 a
+                            return $
+                                Continue
+                                0
+                                (Tuple3' Nothing openMinusClose s2)
+
+    extract _ = 
+        throwM $ ParseError "Unterminated begin"
+
 -- | See 'Streamly.Internal.Data.Parser.wordBy'.
 --
--- /Unimplemented/
+-- /Internal/
 --
-{-# INLINABLE wordBy #-}
-wordBy ::
-    -- Monad m =>
-    (a -> Bool) -> Fold m a b -> Parser m a b
-wordBy = undefined
+{-# INLINE wordBy #-}
+wordBy :: Monad m => (a -> Bool) -> Fold m a b -> Parser m a b
+wordBy predicate (Fold fstep finitial fextract) =
+    Parser step initial extract
+
+    where
+    
+    initial = Tuple3' False False <$> finitial
+
+    step (Tuple3' sawElement sawSepAfterElement s) a =
+        if sawElement
+        then
+            if not (predicate a)
+            then
+                if sawSepAfterElement 
+                then Done 1 <$> fextract s
+                else
+                    do
+                        nextS <- fstep s a
+                        return $ Partial 0 (Tuple3' True False nextS)
+            else return $ Partial 0 (Tuple3' True True s)
+        else
+            if not (predicate a)
+            then 
+                do
+                    nextS <- fstep s a
+                    return $ Partial 0 (Tuple3' True sawSepAfterElement nextS)
+            else return $ Partial 0 (Tuple3' False sawSepAfterElement s)
+
+    extract (Tuple3' _ _ s) = fextract s
 
 -- | See 'Streamly.Internal.Data.Parser.groupBy'.
 --
--- /Unimplemented/
+-- /Internal/
 --
-{-# INLINABLE groupBy #-}
-groupBy ::
-    -- Monad m =>
-    (a -> a -> Bool) -> Fold m a b -> Parser m a b
-groupBy = undefined
+{-# INLINE groupBy #-}
+groupBy :: Monad m => (a -> a -> Bool) -> Fold m a b -> Parser m a b
+groupBy cmp (Fold fstep finitial fextract) =
+    Parser step initial extract
+
+    where
+
+        initial = Tuple' Nothing <$> finitial
+
+        step (Tuple' maybeInitElement s) a =
+            case maybeInitElement of
+                Nothing ->
+                    do
+                        nextS <- fstep s a
+                        return $ Partial 0 (Tuple' (Just a) nextS)
+                Just initElement ->
+                    if cmp initElement a
+                    then
+                        do
+                            nextS <- fstep s a
+                            return $ Partial 0 (Tuple' (Just initElement) nextS)
+                    else Done 1 <$> fextract s
+
+        extract (Tuple' _ s) = fextract s
 
 -- XXX use an Unfold instead of a list?
 -- XXX custom combinators for matching list, array and stream?
@@ -596,18 +907,144 @@ lookAhead (Parser step1 initial1 _) =
 -------------------------------------------------------------------------------
 -- Interleaving
 -------------------------------------------------------------------------------
+
+data ParserTurn = Parser1 | Parser2
+
 --
 -- | See 'Streamly.Internal.Data.Parser.deintercalate'.
 --
--- /Unimplemented/
+-- /Internal/
 --
 {-# INLINE deintercalate #-}
 deintercalate ::
-    -- Monad m =>
-       Fold m a y -> Parser m x a
-    -> Fold m b z -> Parser m x b
+    MonadCatch m
+    => Fold m a y 
+    -> Parser m x a
+    -> Fold m b z 
+    -> Parser m x b
     -> Parser m x (y, z)
-deintercalate = undefined
+deintercalate
+    (Fold fstep1 finitial1 fextract1)
+    (Parser pstep1 pinitial1 pextract1)
+    (Fold fstep2 finitial2 fextract2)
+    (Parser pstep2 pinitial2 pextract2) =
+
+    Parser step initial extract
+
+    where
+    
+    initial = do
+        finit1 <- finitial1
+        pinit1 <- pinitial1
+        finit2 <- finitial2
+        pinit2 <- pinitial2
+        return (finit1, pinit1, finit2, pinit2, Parser1, 0)
+    
+    step (fs1, ps1, fs2, ps2, currentParser, numBuffered) a =
+        case currentParser of
+            Parser1 -> do
+                st <- pstep1 ps1 a
+                case st of
+                    
+                    Partial n ps1new ->
+                        return $ 
+                            Partial n (fs1, ps1new, fs2, ps2, currentParser, 0)
+
+                    Continue n ps1new -> do
+                        let 
+                            newNumBuffered =
+                                if n == 0 
+                                then numBuffered + 1
+                                else numBuffered - n
+
+                        return $ 
+                            Continue 
+                            n 
+                            (fs1, ps1new, fs2, ps2, currentParser, newNumBuffered)
+
+                    Done n result -> do
+                        fs1new <- fstep1 fs1 result
+                        pinit1 <- pinitial1
+                        pinit2 <- pinitial2
+                        return $ 
+                            Partial 
+                            n 
+                            ( fs1new
+                            , pinit1
+                            , fs2
+                            , pinit2
+                            , Parser2
+                            , numBuffered
+                            )
+                    
+                    Error _ -> do
+                        result1 <- fextract1 fs1
+                        result2 <- fextract2 fs2
+                        return $ Done numBuffered (result1, result2)
+
+            Parser2 -> do
+                st <- pstep2 ps2 a
+                case st of
+                    
+                    Partial n ps2new ->
+                        return $ 
+                            Partial n (fs1, ps1, fs2, ps2new, currentParser, 0)
+
+                    Continue n ps2new -> do
+                        let 
+                            newNumBuffered =
+                                if n == 0 
+                                then numBuffered + 1
+                                else numBuffered - n
+
+                        return $ 
+                            Continue 
+                            n 
+                            (fs1, ps1, fs2, ps2new, currentParser, newNumBuffered)
+
+                    Done n result -> do
+                        fs2new <- fstep2 fs2 result
+                        pinit1 <- pinitial1
+                        pinit2 <- pinitial2
+                        return $ 
+                            Partial 
+                            n
+                            ( fs1
+                            , pinit1
+                            , fs2new
+                            , pinit2
+                            , Parser1
+                            , numBuffered
+                            )
+
+                    Error _ -> do
+                        result1 <- fextract1 fs1
+                        result2 <- fextract2 fs2
+                        return $ Done numBuffered (result1, result2)
+        
+    extract (fs1, ps1, fs2, ps2, currentParser, _) =
+        case currentParser of
+            Parser1 -> do
+                maybeRes <- catchAll 
+                    (fmap Just $ pextract1 ps1) 
+                    (\_ -> return Nothing)
+                fs1new <- case maybeRes of
+                    Nothing -> return fs1
+                    Just res -> fstep1 fs1 res
+                result1 <- fextract1 fs1new
+                result2 <- fextract2 fs2
+                return (result1, result2)
+            
+            Parser2 -> do
+                maybeRes <- catchAll 
+                    (fmap Just $ pextract2 ps2) 
+                    (\_ -> return Nothing)
+                fs2new <- case maybeRes of
+                    Nothing -> return fs2
+                    Just res -> fstep2 fs2 res
+                result1 <- fextract1 fs1
+                result2 <- fextract2 fs2new
+                return (result1, result2)
 
 -------------------------------------------------------------------------------
 -- Sequential Collection
