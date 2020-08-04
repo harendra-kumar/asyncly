@@ -381,6 +381,7 @@ library
                      -- Internal modules
                      , Streamly.Internal.BaseCompat
                      , Streamly.Internal.Control.Monad
+                     , Streamly.Internal.Data.KeyValue
                      , Streamly.Internal.Data.Strict
                      , Streamly.Internal.Data.Atomics
                      , Streamly.Internal.Data.Time
@@ -404,6 +405,7 @@ library
                      -- Folds
                      , Streamly.Internal.Data.Fold.Types
                      , Streamly.Internal.Data.Fold
+                     , Streamly.Internal.Data.Fold.KeyValue
                      , Streamly.Internal.Data.Sink.Types
                      , Streamly.Internal.Data.Sink
 

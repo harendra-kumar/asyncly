@@ -137,6 +137,7 @@ module Streamly.Internal.Data.Fold.Types
     , duplicate
     , initialize
     , runStep
+    , finish
     )
 where
 
@@ -468,6 +469,10 @@ runStep (Fold step initial extract) a = do
 
 -- XXX These can be expressed using foldChunks repeatedly on the input of a
 -- fold.
+
+{-# INLINABLE finish #-}
+finish :: Monad m => Fold m a b -> m b
+finish (Fold _ initial extract) = initial >>= extract
 
 -- | For every n input items, apply the first fold and supply the result to the
 -- next fold.
