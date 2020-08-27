@@ -392,7 +392,7 @@ data AltParseState sl sr = AltParseL Int sl | AltParseR sr
 -- /Internal/
 --
 {-# INLINE alt #-}
-alt :: Monad m => Parser m x a -> Parser m x a -> Parser m x a
+alt :: MonadCatch m => Parser m x a -> Parser m x a -> Parser m x a
 alt (Parser stepL initialL extractL) (Parser stepR initialR extractR) =
     Parser step initial extract
 
@@ -426,7 +426,11 @@ alt (Parser stepL initialL extractL) (Parser stepR initialR extractR) =
             Error err -> Error err
 
     extract (AltParseR sR) = extractR sR
-    extract (AltParseL _ sL) = extractL sL
+    extract (AltParseL _ sL) = do
+        r <- try $ extractL sL
+        case r of
+            Left (_ :: ParseError) -> initialR >>= extractR
+            Right b -> return b
 
 -- | See documentation of 'Streamly.Internal.Data.Parser.many'.
 --

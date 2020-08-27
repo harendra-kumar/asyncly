@@ -6,7 +6,7 @@ import qualified Streamly.Internal.Data.Fold as FL
 
 -- import Data.List (partition)
 
-import Test.Hspec(Spec, hspec, describe)
+import Test.Hspec(Expectation, Spec, hspec, it, describe, shouldReturn)
 import qualified Test.Hspec as H
 import Test.Hspec.QuickCheck
 import Test.QuickCheck (arbitrary, forAll, choose, elements, Property,
@@ -14,6 +14,7 @@ import Test.QuickCheck (arbitrary, forAll, choose, elements, Property,
                         (.&&.), Gen)
 
 import Test.QuickCheck.Monadic (monadicIO, PropertyM, assert, monitor)
+import Control.Applicative ((<|>))
 import Control.Exception (SomeException(..))
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad (when)
@@ -483,6 +484,13 @@ many_empty =
 --         Right _ -> False
 --         Left _ -> True)
 
+altEOF :: Expectation
+altEOF =
+    S.parseD
+        (P.satisfy (> 0) <|> return 66)
+        (S.fromList ([]::[Int]))
+    `shouldReturn` 66
+
 main :: IO ()
 main =
     hspec $
@@ -538,3 +546,5 @@ main =
         -- prop "" some
         -- prop "fail due to parser being die" someFail
     takeProperties
+
+    describe "Alternative" $ it "end of input" altEOF
