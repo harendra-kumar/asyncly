@@ -149,6 +149,9 @@ extra-source-files:
     src/config.h.in
     src/inline.hs
     stack.yaml
+    cabal.project
+    test/Streamly/Test/Unicode/ucd/NormalizationTest.txt
+    test/Streamly/Test/Unicode/extra/NormalizationTest.txt
 
 extra-tmp-files:
     config.log
@@ -483,6 +486,7 @@ library
 
                      -- Text Processing
                      , Streamly.Internal.Unicode.Stream
+                     , Streamly.Internal.Unicode.Normalize
                      , Streamly.Internal.Unicode.Char
                      , Streamly.Internal.Unicode.Array.Char
                      , Streamly.Internal.Unicode.Array.Prim.Pinned
@@ -527,6 +531,7 @@ library
                      , transformers-base >= 0.4   && < 0.5
 
                      , fusion-plugin-types >= 0.1 && < 0.2
+                     , unicode-data      >= 0.1 && < 0.2
 
   if !impl(ghcjs)
     build-depends:
@@ -863,6 +868,16 @@ executable FileSystem.Event
     , base >= 4.8 && < 5
   if os(windows)
     buildable: False
+
+test-suite normalization-ucd
+  import: test-options
+  type: exitcode-stdio-1.0
+  main-is: Streamly/Test/Unicode/Normalize.hs
+  hs-source-dirs: test
+  build-depends:
+      streamly
+    , base >= 4.8 && < 5
+  default-language: Haskell2010
 
 -------------------------------------------------------------------------------
 -- Examples

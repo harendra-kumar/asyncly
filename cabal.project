@@ -1,0 +1,6 @@
+packages: .
+
+source-repository-package
+   type: git
+   location: https://github.com/composewell/unicode-data.git
+   tag: 1f380717c145a19b3d5491a2f8d5e23dffc3b7f5
