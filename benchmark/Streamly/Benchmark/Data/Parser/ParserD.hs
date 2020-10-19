@@ -70,6 +70,10 @@ all value = IP.parseD (PR.all (<= value))
 take :: MonadThrow m => Int -> SerialT m a -> m ()
 take value = IP.parseD (PR.take value FL.drain)
 
+{-# INLINE takeP #-}
+takeP :: MonadThrow m => Int -> SerialT m a -> m ()
+takeP value = IP.parseD (PR.takeP value (PR.fromFold FL.drain))
+
 {-# INLINE takeWhile #-}
 takeWhile :: MonadThrow m => Int -> SerialT m Int -> m ()
 takeWhile value = IP.parseD (PR.takeWhile (<= value) FL.drain)
@@ -184,6 +188,7 @@ o_1_space_serial value =
     [ benchIOSink value "any" $ any value
     , benchIOSink value "all" $ all value
     , benchIOSink value "take" $ take value
+    , benchIOSink value "takeP" $ takeP value
     , benchIOSink value "takeWhile" $ takeWhile value
     , benchIOSink value "split (all,any)" $ splitAllAny value
     , benchIOSink value "many" many

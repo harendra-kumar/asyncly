@@ -23,10 +23,13 @@ module Handle.ReadWrite
     (allBenchmarks)
 where
 
-import Control.Exception (SomeException)
+import Control.Exception (SomeException, Exception, throw)
+import Control.Monad (when)
 import System.IO (Handle, hClose, hGetChar)
+import System.Random (randomIO)
 import Prelude hiding (last, length)
 
+import qualified Data.Map.Strict as Map
 import qualified Streamly.Data.Fold as FL
 import qualified Streamly.Unicode.Stream as SS
 import qualified Streamly.FileSystem.Handle as FH
@@ -420,6 +423,45 @@ readWriteAfter_Stream inh devNull =
     let readEx = IP.after_ (hClose inh) (S.unfold FH.read inh)
      in S.fold (FH.write devNull) readEx
 
+data BenchException
+    = BenchException1
+    | BenchException2
+    deriving (Show, Eq, Ord)
+
+instance Exception BenchException
+
+fromToBytesRetryKnown :: Handle -> Handle -> IO ()
+fromToBytesRetryKnown inh devNull =
+    -- We are bound to hit an even number within a 100 random tries
+    let readEx =
+            IP.retry (Map.singleton BenchException1 100) (\_ -> S.nil)
+                $ action `S.before` IFH.toBytes inh
+     in IFH.fromBytes devNull $ readEx
+
+    where
+
+    action = do
+        x <- randomIO :: IO Int
+        when (odd x) $ throw BenchException1
+
+fromToBytesRetryNone :: Handle -> Handle -> IO ()
+fromToBytesRetryNone inh devNull =
+    let readEx =
+            IP.retry (Map.singleton BenchException1 100) (\_ -> S.nil)
+                $ IFH.toBytes inh
+     in IFH.fromBytes devNull $ readEx
+
+fromToBytesRetryUnknown :: Handle -> Handle -> IO ()
+fromToBytesRetryUnknown inh devNull =
+    let readEx =
+            IP.retry
+                (Map.singleton BenchException1 100)
+                (\_ -> (IFH.toBytes inh))
+                $ throw BenchException2 `S.before` IFH.toBytes inh
+     in IFH.fromBytes devNull $ readEx
+
+-- XXX Why prefix this with copy?
+-- XXX fromToBytes vs read?
 o_1_space_copy_stream_exceptions :: BenchEnv -> [Benchmark]
 o_1_space_copy_stream_exceptions env =
     [ bgroup "copy/read/exceptions"
@@ -443,6 +485,12 @@ o_1_space_copy_stream_exceptions env =
            fromToBytesBracket_Stream inh (nullH env)
        , mkBenchSmall "S.bracket" env $ \inh _ ->
            fromToBytesBracketStream inh (nullH env)
+       , mkBenchSmall "IP.retry known" env $ \inh _ ->
+           fromToBytesRetryKnown inh (nullH env)
+       , mkBenchSmall "IP.retry none" env $ \inh _ ->
+           fromToBytesRetryNone inh (nullH env)
+       , mkBenchSmall "IP.retry unknown" env $ \inh _ ->
+           fromToBytesRetryUnknown inh (nullH env)
         ]
     ]
 

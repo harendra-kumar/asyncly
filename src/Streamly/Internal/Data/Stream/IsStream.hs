@@ -538,6 +538,7 @@ module Streamly.Internal.Data.Stream.IsStream
     , finally_
     , finally
     , handle
+    , retry
 
     -- * Generalize Inner Monad
     , hoist
@@ -605,6 +606,7 @@ import Data.Functor.Identity (Identity (..))
 import Data.Kind (Type)
 import Data.Heap (Entry(..))
 import Data.Maybe (isJust, fromJust, isNothing)
+import Data.Map.Strict (Map)
 import Data.Void (Void)
 import Foreign.Storable (Storable)
 import Streamly.Internal.BaseCompat (fromLeft, fromRight)
@@ -5102,6 +5104,48 @@ handle :: (IsStream t, MonadCatch m, Exception e)
     => (e -> t m a) -> t m a -> t m a
 handle handler xs =
     D.fromStreamD $ D.handle (D.toStreamD . handler) $ D.toStreamD xs
+
+-- | @retry@ takes 3 arguments
+--
+-- 1. A map @m@ whose keys are exceptions and values are the number of times to
+-- retry the action given that the exception occures.
+--
+-- 2. A handler @han@ that decides how to handle an exception not existing in
+-- the map.
+--
+-- 3. The stream itself that we want to run this mechanism on.
+--
+-- When evaluating a stream if an exception occurs,
+--
+-- 1. The stream evaluation aborts
+--
+-- 2. The exception is looked up in @m@
+--
+--    a. If the exception exists and the mapped value is > 0 then,
+--
+--       i. The value is decreased by 1.
+--
+--       ii. The stream is resumed from where the exception was called, retrying
+--       the action.
+--
+--    b. If the exception exists and the mapped value is == 0 then the stream
+--    evaluation stops.
+--
+--    c. If the exception does not exist then we handle the exception using
+--    @han@.
+--
+-- /Latest/
+--
+{-# INLINE retry #-}
+retry :: (IsStream t, MonadCatch m, Exception e, Ord e)
+    => Map e Int
+       -- ^ map from exception to retry count
+    -> (e -> t m a)
+       -- ^ default handler for those exceptions that are not in the map
+    -> t m a
+    -> t m a
+retry emap handler inp =
+    D.fromStreamD $ D.retry emap (D.toStreamD . handler) $ D.toStreamD inp
 
 -- Keep concating either streams as long as rights are generated, stop as soon
 -- as a left is generated and concat the left stream.

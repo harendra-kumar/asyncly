@@ -698,6 +698,7 @@ test-suite internal-data-fold-test
     , base              >= 4.9   && < 5
     , hspec             >= 2.0   && < 3
     , QuickCheck        >= 2.13  && < 2.15
+<<<<<<< HEAD
   default-language: Haskell2010
 
 test-suite Data.Unfold
@@ -712,6 +713,8 @@ test-suite Data.Unfold
     , hspec             >= 2.0   && < 3
     , QuickCheck        >= 2.13  && < 2.15
     , transformers      >= 0.4 && < 0.6
+=======
+>>>>>>> 6a6bedb3... Allow QuickCheck version to be >= 2.13
   default-language: Haskell2010
 
 test-suite internal-data-parser-test

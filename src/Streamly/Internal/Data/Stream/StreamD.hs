@@ -294,6 +294,7 @@ module Streamly.Internal.Data.Stream.StreamD
     , finally
     , ghandle
     , handle
+    , retry
 
     -- * Concurrent Application
     , mkParallel
@@ -318,6 +319,7 @@ import Data.Bits (shiftR, shiftL, (.|.), (.&.))
 import Data.Functor.Identity (Identity(..))
 import Data.Int (Int64)
 import Data.IORef (newIORef, readIORef, mkWeakIORef, writeIORef, IORef)
+import Data.Map.Strict (Map)
 import Data.Maybe (fromJust, isJust, isNothing)
 import Data.Word (Word32)
 import Foreign.Ptr (Ptr)
@@ -340,6 +342,7 @@ import Streamly.Internal.Data.Unfold.Types (Unfold(..))
 import Streamly.Internal.Data.Tuple.Strict (Tuple3'(..))
 import Streamly.Internal.Data.Stream.SVar (fromConsumer, pushToFold)
 
+import qualified Data.Map.Strict as Map
 import qualified Streamly.Internal.Data.IORef.Prim as Prim
 import qualified Streamly.Internal.Data.Pipe.Types as Pipe
 import qualified Streamly.Internal.Data.Array.Storable.Foreign.Types as A
@@ -3498,6 +3501,54 @@ _handle f (Stream step state) = Stream step' (Left state)
             Yield x s -> return $ Yield x (Right (Stream step1 s))
             Skip s    -> return $ Skip (Right (Stream step1 s))
             Stop      -> return Stop
+
+data RetryState m s1 s2 = WithOldStream m s1 | WithNewStream s2
+
+{-# INLINE_NORMAL retry #-}
+retry
+    :: forall e m a. (Exception e, Ord e, MonadCatch m)
+    => Map e Int
+       -- ^ map from exception to retry count
+    -> (e -> Stream m a)
+       -- ^ default handler for those exceptions that are not in the map
+    -> Stream m a
+    -> Stream m a
+retry emap0 han0 (Stream step0 state0) = Stream step state
+
+    where
+
+    state = WithOldStream emap0 state0
+
+    {-# INLINE_LATE step #-}
+    step gst (WithOldStream emap st) = do
+        -- XXX gtry? Whats the difference?
+        eres <- MC.try $ step0 gst st
+        case eres of
+            Left e -> return $ han e emap st
+            Right res ->
+                return
+                    $ case res of
+                          Yield x st1 -> Yield x $ WithOldStream emap st1
+                          Skip st1 -> Skip $ WithOldStream emap st1
+                          Stop -> Stop
+    step gst (WithNewStream (Stream step1 state1)) = do
+        -- XXX gtry? Whats the difference?
+        res <- step1 gst state1
+        return
+            $ case res of
+                  Yield x st1 -> Yield x $ WithNewStream (Stream step1 st1)
+                  Skip st1 -> Skip $ WithNewStream (Stream step1 st1)
+                  Stop -> Stop
+
+    {-# INLINE han #-}
+    han e emap st =
+        case Map.lookup e emap of
+            Just i
+                | i > 0 ->
+                    let emap1 = Map.insert e (i - 1) emap
+                     in Skip $ WithOldStream emap1 st
+                | otherwise -> Skip $ WithNewStream $ han0 e
+            Nothing -> Skip $ WithNewStream $ han0 e
 
 -------------------------------------------------------------------------------
 -- General transformation

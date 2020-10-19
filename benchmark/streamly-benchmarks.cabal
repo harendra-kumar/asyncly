@@ -435,6 +435,8 @@ benchmark FileSystem.Handle
       typed-process     >= 0.2.3 && < 0.3
     , directory         >= 1.2.2 && < 1.4
     , ghc-prim          >= 0.4   && < 0.7
+    , exceptions        >= 0.8   && < 0.11
+    , containers        >= 0.5   && < 0.7
 
 -------------------------------------------------------------------------------
 -- benchmark comparison and presentation

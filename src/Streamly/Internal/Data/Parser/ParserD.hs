@@ -51,6 +51,7 @@ module Streamly.Internal.Data.Parser.ParserD
     -- , takeLE1 -- take1 -- takeBetween 1 n
     , takeEQ -- takeBetween n n
     , takeGE -- takeBetween n maxBound
+    , takeP
 
     -- Grab a sequence of input elements by inspecting them
     , lookAhead
@@ -323,6 +324,38 @@ take n (Fold fstep finitial fextract) = Parser step initial extract
             if i1 < n
             then return $ Partial 0 s1
             else Done 0 <$> fextract res
+        | otherwise = Done 1 <$> fextract r
+
+    extract (Tuple' _ r) = fextract r
+
+-- XXX This will just be "take" after terminating folds are merged.
+{-# INLINE takeP #-}
+takeP :: Monad m => Int -> Parser m a b -> Parser m a b
+takeP lim (Parser fstep finitial fextract) = Parser step initial extract
+
+    where
+
+    initial = Tuple' 0 <$> finitial
+
+    step (Tuple' cnt r) a
+        | cnt < lim = do
+            res <- fstep r a
+            let cnt1 = cnt + 1
+            case res of
+                Partial n s -> do
+                    let taken = cnt1 - n
+                    assert (taken >= 0) (return ())
+                    if taken < lim
+                    then return $ Partial n $ Tuple' taken s
+                    else Done n <$> fextract s
+                Continue n s -> do
+                    let taken = cnt1 - n
+                    assert (taken >= 0) (return ())
+                    if taken < lim
+                    then return $ Continue n $ Tuple' taken s
+                    else Done n <$> fextract s
+                Done n b -> return $ Done n b
+                Error str -> return $ Error str
         | otherwise = Done 1 <$> fextract r
 
     extract (Tuple' _ r) = fextract r
@@ -628,13 +661,11 @@ sequence _f _p = undefined
 --
 -- | See 'Streamly.Internal.Data.Parser.choice'.
 --
--- /Unimplemented/
+-- /Internal/
 --
 {-# INLINE choice #-}
-choice ::
-    -- Foldable t =>
-    t (Parser m a b) -> Parser m a b
-choice _ps = undefined
+choice :: (Monad m, Foldable t) => t (Parser m a b) -> Parser m a b
+choice ps = foldl1 shortest ps
 
 -------------------------------------------------------------------------------
 -- Sequential Repetition
