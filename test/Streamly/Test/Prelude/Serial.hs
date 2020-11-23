@@ -16,6 +16,7 @@ import Data.IORef ( newIORef, readIORef, writeIORef )
 import Data.Int (Int64)
 import Data.List (intercalate)
 import Data.Maybe ( isJust, fromJust )
+import Data.Word ( Word8 )
 import Foreign.Storable (Storable)
 #if __GLASGOW_HASKELL__ < 808
 import Data.Semigroup ((<>))
@@ -259,8 +260,7 @@ groupSplitOps desc = do
 
     -- seq splitting
     seqSplitterProperties (0 :: Int) desc
-    -- XXX This will fail
-    -- seqSplitterProperties (0 :: Word8) desc
+    seqSplitterProperties (0 :: Word8) desc
 
     prop (desc <> " intercalate [x] . splitOn (== x) == id") $
         forAll listWithZeroes $ \xs -> do
