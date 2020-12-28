@@ -93,7 +93,7 @@ runOne st m0 winfo =
         incrementBufferLimit sv
         sendStop sv winfo
     sendit a = liftIO $ void $ send sv (ChildYield a)
-    single a = sendit a >> (liftIO $ sendStop sv winfo)
+    single a = sendit a >> liftIO (sendStop sv winfo)
     yieldk a r = sendit a >> go r
 
 runOneLimited
@@ -120,7 +120,7 @@ runOneLimited st m0 winfo = go m0
         incrementYieldLimit sv
         sendStop sv winfo
     sendit a = liftIO $ void $ send sv (ChildYield a)
-    single a = sendit a >> (liftIO $ sendStop sv winfo)
+    single a = sendit a >> liftIO (sendStop sv winfo)
     yieldk a r = sendit a >> go r
 
 -------------------------------------------------------------------------------
@@ -203,7 +203,7 @@ joinStreamVarPar style ss m1 m2 = mkStream $ \st yld sng stp ->
 {-# INLINE consMParallel #-}
 {-# SPECIALIZE consMParallel :: IO a -> ParallelT IO a -> ParallelT IO a #-}
 consMParallel :: MonadAsync m => m a -> ParallelT m a -> ParallelT m a
-consMParallel m r = fromStream $ K.yieldM m `parallel` (toStream r)
+consMParallel m r = fromStream $ K.yieldM m `parallel` toStream r
 
 infixr 6 `parallel`
 
@@ -571,7 +571,7 @@ instance (Monad m, MonadAsync m) => Applicative (ParallelT m) where
 {-# INLINE bindParallel #-}
 {-# SPECIALIZE bindParallel :: ParallelT IO a -> (a -> ParallelT IO b) -> ParallelT IO b #-}
 bindParallel :: MonadAsync m => ParallelT m a -> (a -> ParallelT m b) -> ParallelT m b
-bindParallel m f = fromStream $ K.bindWith parallel (K.adapt m) (\a -> K.adapt $ f a)
+bindParallel m f = fromStream $ K.bindWith parallel (K.adapt m) (K.adapt . f)
 
 instance MonadAsync m => Monad (ParallelT m) where
     return = pure

@@ -101,4 +101,4 @@ where
 -- XXX Use Cons and Nil instead of Yield and Stop?
 data Step m a = Yield a (Stream m a) | Stop
 
-data Stream m a = Stream (m (Step m a))
+newtype Stream m a = Stream (m (Step m a))

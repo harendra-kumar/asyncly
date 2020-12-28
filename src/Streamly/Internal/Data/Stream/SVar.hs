@@ -98,7 +98,7 @@ fromStreamVar sv = MkStream $ \st yld sng stp -> do
             StopAny -> return True
             StopBy -> do
                 sid <- liftIO $ readIORef (svarStopBy sv)
-                return $ if tid == sid then True else False
+                return (tid == sid)
 
 #if __GLASGOW_HASKELL__ < 810
 #ifdef INSPECTION
@@ -232,7 +232,7 @@ pushToFold sv a = do
     let qref = outputQueueFromConsumer sv
     done <- do
         (_, n) <- liftIO $ readIORef qref
-        if (n > 0)
+        if n > 0
         then fromConsumer sv
         else return False
     if done

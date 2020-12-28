@@ -308,7 +308,7 @@ fromIndicesM gen = go 0
 fromIndices :: IsStream t => (Int -> a) -> t m a
 fromIndices gen = go 0
   where
-    go n = (gen n) `cons` go (n + 1)
+    go n = gen n `cons` go (n + 1)
 
 {-# INLINE iterate #-}
 iterate :: IsStream t => (a -> a) -> a -> t m a
@@ -361,7 +361,7 @@ foldr step acc = foldrM (\x xs -> xs >>= \b -> return (step x b)) (return acc)
 {-# INLINE foldrT #-}
 foldrT :: (IsStream t, Monad m, Monad (s m), MonadTrans s)
     => (a -> s m b -> s m b) -> s m b -> t m a -> s m b
-foldrT step final m = go m
+foldrT step final = go
   where
     go m1 = do
         res <- lift $ uncons m1
@@ -426,7 +426,7 @@ foldl' step begin = foldlx' step begin id
 {-# INLINABLE foldlMx' #-}
 foldlMx' :: (IsStream t, Monad m)
     => (x -> a -> m x) -> m x -> (x -> m b) -> t m a -> m b
-foldlMx' step begin done m = go begin m
+foldlMx' step begin done = go begin
     where
     go !acc m1 =
         let stop = acc >>= done
@@ -460,7 +460,7 @@ foldlM' step begin = foldlMx' step begin return
 -- | Lazy left fold to a stream.
 {-# INLINE foldlS #-}
 foldlS :: IsStream t => (t m b -> a -> t m b) -> t m b -> t m a -> t m b
-foldlS step begin m = go begin m
+foldlS step = go
     where
     go acc rest = mkStream $ \st yld sng stp ->
         let run x = foldStream st yld sng stp x
@@ -473,7 +473,7 @@ foldlS step begin m = go begin m
 {-# INLINE foldlT #-}
 foldlT :: (IsStream t, Monad m, Monad (s m), MonadTrans s)
     => (s m b -> a -> s m b) -> s m b -> t m a -> s m b
-foldlT step begin m = go begin m
+foldlT step = go
   where
     go acc m1 = do
         res <- lift $ uncons m1
@@ -616,7 +616,7 @@ mfix f = mkStream $ \st yld sng stp ->
 
 {-# INLINE init #-}
 init :: (IsStream t, Monad m) => t m a -> m (Maybe (t m a))
-init m = go1 m
+init = go1
     where
     go1 m1 = do
         r <- uncons m1
@@ -630,7 +630,7 @@ init m = go1 m
 
 {-# INLINE elem #-}
 elem :: (IsStream t, Monad m, Eq a) => a -> t m a -> m Bool
-elem e m = go m
+elem e = go
     where
     go m1 =
         let stop      = return False
@@ -640,7 +640,7 @@ elem e m = go m
 
 {-# INLINE notElem #-}
 notElem :: (IsStream t, Monad m, Eq a) => a -> t m a -> m Bool
-notElem e m = go m
+notElem e = go
     where
     go m1 =
         let stop      = return True
@@ -650,7 +650,7 @@ notElem e m = go m
 
 {-# INLINABLE all #-}
 all :: (IsStream t, Monad m) => (a -> Bool) -> t m a -> m Bool
-all p m = go m
+all p = go
     where
     go m1 =
         let single a   | p a       = return True
@@ -661,7 +661,7 @@ all p m = go m
 
 {-# INLINABLE any #-}
 any :: (IsStream t, Monad m) => (a -> Bool) -> t m a -> m Bool
-any p m = go m
+any p = go
     where
     go m1 =
         let single a   | p a       = return True
@@ -677,7 +677,7 @@ last = foldlx' (\_ y -> Just y) Nothing id
 
 {-# INLINE minimum #-}
 minimum :: (IsStream t, Monad m, Ord a) => t m a -> m (Maybe a)
-minimum m = go Nothing m
+minimum = go Nothing
     where
     go Nothing m1 =
         let stop      = return Nothing
@@ -701,7 +701,7 @@ minimum m = go Nothing m
 minimumBy
     :: (IsStream t, Monad m)
     => (a -> a -> Ordering) -> t m a -> m (Maybe a)
-minimumBy cmp m = go Nothing m
+minimumBy cmp = go Nothing
     where
     go Nothing m1 =
         let stop      = return Nothing
@@ -721,7 +721,7 @@ minimumBy cmp m = go Nothing m
 
 {-# INLINE maximum #-}
 maximum :: (IsStream t, Monad m, Ord a) => t m a -> m (Maybe a)
-maximum m = go Nothing m
+maximum = go Nothing
     where
     go Nothing m1 =
         let stop      = return Nothing
@@ -743,7 +743,7 @@ maximum m = go Nothing m
 
 {-# INLINE maximumBy #-}
 maximumBy :: (IsStream t, Monad m) => (a -> a -> Ordering) -> t m a -> m (Maybe a)
-maximumBy cmp m = go Nothing m
+maximumBy cmp = go Nothing
     where
     go Nothing m1 =
         let stop      = return Nothing
@@ -775,7 +775,7 @@ m !! i = go i m
 
 {-# INLINE lookup #-}
 lookup :: (IsStream t, Monad m, Eq a) => a -> t m (a, b) -> m (Maybe b)
-lookup e m = go m
+lookup e = go
     where
     go m1 =
         let single (a, b) | a == e = return $ Just b
@@ -786,7 +786,7 @@ lookup e m = go m
 
 {-# INLINE findM #-}
 findM :: (IsStream t, Monad m) => (a -> m Bool) -> t m a -> m (Maybe a)
-findM p m = go m
+findM p = go
     where
     go m1 =
         let single a = do
@@ -821,7 +821,7 @@ findIndices p = go 0
 -- output of the action.
 {-# INLINE mapM_ #-}
 mapM_ :: (IsStream t, Monad m) => (a -> m b) -> t m a -> m ()
-mapM_ f m = go m
+mapM_ f = go
     where
     go m1 =
         let stop = return ()
@@ -879,7 +879,7 @@ scanl' step begin = scanlx' step begin id
 
 {-# INLINE filter #-}
 filter :: IsStream t => (a -> Bool) -> t m a -> t m a
-filter p m = go m
+filter p = go
     where
     go m1 = mkStream $ \st yld sng stp ->
         let single a   | p a       = sng a
@@ -890,7 +890,7 @@ filter p m = go m
 
 {-# INLINE take #-}
 take :: IsStream t => Int -> t m a -> t m a
-take n m = go n m
+take = go
     where
     go n1 m1 = mkStream $ \st yld sng stp ->
         let yieldk a r = yld a (go (n1 - 1) r)
@@ -900,7 +900,7 @@ take n m = go n m
 
 {-# INLINE takeWhile #-}
 takeWhile :: IsStream t => (a -> Bool) -> t m a -> t m a
-takeWhile p m = go m
+takeWhile p = go
     where
     go m1 = mkStream $ \st yld sng stp ->
         let single a   | p a       = sng a
@@ -923,7 +923,7 @@ drop n m = fromStream $ unShare (go n (toStream m))
 
 {-# INLINE dropWhile #-}
 dropWhile :: IsStream t => (a -> Bool) -> t m a -> t m a
-dropWhile p m = go m
+dropWhile p = go
     where
     go m1 = mkStream $ \st yld sng stp ->
         let single a   | p a       = stp
@@ -940,7 +940,7 @@ dropWhile p m = go m
 -- other stream types to overload it.
 {-# INLINE sequence #-}
 sequence :: (IsStream t, MonadAsync m) => t m (m a) -> t m a
-sequence m = go m
+sequence = go
     where
     go m1 = mkStream $ \st yld sng stp ->
         let single ma = ma >>= sng
@@ -953,7 +953,7 @@ sequence m = go m
 
 {-# INLINE intersperseM #-}
 intersperseM :: (IsStream t, MonadAsync m) => m a -> t m a -> t m a
-intersperseM a m = prependingStart m
+intersperseM a = prependingStart
     where
     prependingStart m1 = mkStream $ \st yld sng stp ->
         let yieldk i x = foldStreamShared st yld sng stp $ return i |: go x
@@ -969,7 +969,7 @@ intersperse a = intersperseM (return a)
 
 {-# INLINE insertBy #-}
 insertBy :: IsStream t => (a -> a -> Ordering) -> a -> t m a -> t m a
-insertBy cmp x m = go m
+insertBy cmp x = go
   where
     go m1 = mkStream $ \st yld _ _ ->
         let single a = case cmp x a of
@@ -987,7 +987,7 @@ insertBy cmp x m = go m
 
 {-# INLINE deleteBy #-}
 deleteBy :: IsStream t => (a -> a -> Bool) -> a -> t m a -> t m a
-deleteBy eq x m = go m
+deleteBy eq x = go
   where
     go m1 = mkStream $ \st yld sng stp ->
         let single a = if eq x a then stp else sng a
@@ -1010,12 +1010,10 @@ reverse = foldlS (flip cons) nil
 
 {-# INLINE mapMaybe #-}
 mapMaybe :: IsStream t => (a -> Maybe b) -> t m a -> t m b
-mapMaybe f m = go m
+mapMaybe f = go
   where
     go m1 = mkStream $ \st yld sng stp ->
-        let single a = case f a of
-                Just b  -> sng b
-                Nothing -> stp
+        let single a = maybe stp sng (f a)
             yieldk a r = case f a of
                 Just b  -> yld b $ go r
                 Nothing -> foldStream (adaptState st) yieldk single stp r
@@ -1046,7 +1044,7 @@ zipWith f = go
 -- @since 0.1.0
 {-# INLINABLE zipWithM #-}
 zipWithM :: (IsStream t, Monad m) => (a -> b -> m c) -> t m a -> t m b -> t m c
-zipWithM f m1 m2 = go m1 m2
+zipWithM f = go
     where
     go mx my = mkStream $ \st yld sng stp -> do
         let merge a ra =

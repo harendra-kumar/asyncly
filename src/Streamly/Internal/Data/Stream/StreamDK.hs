@@ -112,7 +112,7 @@ foldrS f streamb = go
 
 {-# INLINE_LATE foldrM #-}
 foldrM :: Monad m => (a -> m b -> m b) -> m b -> Stream m a -> m b
-foldrM fstep acc ys = go ys
+foldrM fstep acc = go
     where
     go (Stream step) = do
         r <- step

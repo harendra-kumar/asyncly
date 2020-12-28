@@ -298,9 +298,9 @@ enumerateFromThenToSmall from next to = Serial.map toEnum $
 enumerateFromThenSmallBounded :: (IsStream t, Monad m, Enumerable a, Bounded a)
     => a -> a -> t m a
 enumerateFromThenSmallBounded from next =
-    case fromEnum next >= fromEnum from of
-        True -> enumerateFromThenTo from next maxBound
-        False -> enumerateFromThenTo from next minBound
+    if fromEnum next >= fromEnum from
+    then enumerateFromThenTo from next maxBound
+    else enumerateFromThenTo from next minBound
 
 -------------------------------------------------------------------------------
 -- Enumerable type class
