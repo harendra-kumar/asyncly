@@ -81,7 +81,7 @@ module Streamly.Internal.FileSystem.Event.Darwin
     -- * Creating a Watch
 
     -- ** Default configuration
-      Config
+      Config (..)
     , Toggle (..)
     , defaultConfig
 
@@ -90,7 +90,7 @@ module Streamly.Internal.FileSystem.Event.Darwin
     , setEventBatching
 
     -- ** Events of Interest
-    , setRootChanged
+    , setRootMoved
     , setFileEvents
     , setIgnoreSelf
 #if HAVE_DECL_KFSEVENTSTREAMCREATEFLAGFULLHISTORY
@@ -98,6 +98,7 @@ module Streamly.Internal.FileSystem.Event.Darwin
 #endif
 
     -- ** Watch APIs
+    , watch
     , watchTrees
     , watchTreesWith
 
@@ -255,8 +256,8 @@ foreign import ccall safe
 --
 -- /Internal/
 --
-setRootChanged :: Toggle -> Config -> Config
-setRootChanged = setFlag kFSEventStreamCreateFlagWatchRoot
+setRootMoved :: Toggle -> Config -> Config
+setRootMoved = setFlag kFSEventStreamCreateFlagWatchRoot
 
 foreign import ccall safe
     "FSEventStreamCreateFlagFileEvents"
@@ -321,7 +322,7 @@ setFullHistory = setFlag kFSEventStreamCreateFlagFullHistory
 --
 -- * 'setEventBatching' ('Batch' 0.0)
 -- * 'setFileEvents' 'On'
--- * 'setRootChanged' 'Off'
+-- * 'setRootMoved' 'Off'
 -- * 'setIgnoreSelf' 'Off'
 #if HAVE_DECL_KFSEVENTSTREAMCREATEFLAGFULLHISTORY
 -- * 'setFullHistory' 'Off'
@@ -498,14 +499,16 @@ watchToStream (Watch handle _ _) =
 --
 -- BUGS: If a watch is started on a non-existing path then the path is not
 -- watched even if it is created later.  The macOS API does not fail for a
--- non-existing path.  If a non-existing path is watched with 'setRootChanged'
+-- non-existing path.  If a non-existing path is watched with 'setRootMoved'
 -- then an 'isRootChanged' event is reported if the path is created later and
 -- the "path" field in the event is set to the dirname of the path rather than
 -- the full absolute path. This is the observed behavior on macOS 10.15.1.
 --
 -- @
 -- {-\# LANGUAGE MagicHash #-}
--- watchTreesWith ('setIgnoreSelf' 'On' . 'setRootChanged' 'On') [Array.fromCString\# "path"#]
+-- watchTreesWith 
+--      ('setIgnoreSelf' 'On' . 'setRootMoved' 'On')
+--      [Array.fromCString\# "path"#]
 -- @
 --
 -- /Internal/
@@ -527,6 +530,22 @@ watchTreesWith f paths = S.bracket before after watchToStream
 --
 watchTrees :: NonEmpty (Array Word8) -> SerialT IO Event
 watchTrees = watchTreesWith id
+
+-- | Start monitoring a list of file system paths for file system events with
+-- the supplied configuration. The paths could be files or directories.
+-- When the path is a directory, the whole directory tree under it is watched
+-- recursively. Monitoring starts from the current time onwards. The paths are
+-- specified as UTF-8 encoded 'Array' of 'Word8'.
+--
+-- @
+-- {-\# LANGUAGE MagicHash #-}
+-- watch True ('setIgnoreSelf' 'On' . 'setRootMoved' 'On') [Array.fromCString\# "path"#]
+-- @
+--
+-- /Internal/
+--
+watch :: Bool -> Config -> NonEmpty (Array Word8) -> SerialT IO Event
+watch _ cfg paths = watchTreesWith (\_ -> cfg) paths
 
 -------------------------------------------------------------------------------
 -- Examine the event stream
@@ -656,7 +675,7 @@ foreign import ccall safe
 -- object itself. Note that the object may become unreachable or deleted after
 -- a change of path.
 --
--- /Applicable only when 'setRootChanged' is 'On'/
+-- /Applicable only when 'setRootMoved' is 'On'/
 --
 -- /Occurs only for the watched path/
 --

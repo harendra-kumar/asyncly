@@ -45,7 +45,7 @@ import qualified Streamly.Internal.FileSystem.Event.Linux as Event
 #elif defined(CABAL_OS_WINDOWS)
 import qualified Streamly.Internal.FileSystem.Event.Windows as Event
 #else
-#error "FS Events not supported on this platform
+#error "FS Events not supported on this platform"
 #endif
 
 #if !defined(CABAL_OS_WINDOWS)

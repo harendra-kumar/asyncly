@@ -479,7 +479,8 @@ library
                      -- Filesystem
                      , Streamly.Internal.FileSystem.Handle
                      , Streamly.Internal.FileSystem.Dir
-                     , Streamly.Internal.FileSystem.File
+                     , Streamly.Internal.FileSystem.File                     
+                     , Streamly.Internal.FileSystem.Event
 
                      -- Text Processing
                      , Streamly.Internal.Unicode.Stream
@@ -517,7 +518,7 @@ library
                      , transformers      >= 0.4   && < 0.6
 
                      , heaps             >= 0.3     && < 0.4
-
+                     , filepath          >= 1.4.1 && < 1.5
                     -- concurrency
                      , atomic-primops    >= 0.8   && < 0.9
                      , lockfree-queue    >= 0.2.3 && < 0.3

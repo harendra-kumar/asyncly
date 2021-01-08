@@ -63,7 +63,7 @@ module Streamly.Internal.FileSystem.Event.Linux
     -- * Subscribing to events
 
     -- ** Default configuration
-      Config
+      Config (..)
     , Toggle (..)
     , defaultConfig
 
@@ -101,8 +101,7 @@ module Streamly.Internal.FileSystem.Event.Linux
     -- ** Watch APIs
     -- XXX watchPaths is redundant now because we can use watchTrees with
     -- setRecursiveMode False. Perhaps we can use a common "watch" API.
-    , watchPathsWith
-    , watchPaths
+    , watch
     , watchTreesWith
     , watchTrees
     , addToWatch
@@ -112,6 +111,7 @@ module Streamly.Internal.FileSystem.Event.Linux
     , Event(..)
     , getRoot
     , getRelPath
+    , getAbsPath
     , getCookie
 
     -- ** Exception Conditions
@@ -156,7 +156,7 @@ import Data.Functor.Identity (runIdentity)
 import Data.IntMap.Lazy (IntMap)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef, modifyIORef)
 import Data.List.NonEmpty (NonEmpty)
-#if !(MIN_VERSION_base(4,11,0))
+#if !(MIN_VERSION_base(4,13,0))
 import Data.Semigroup (Semigroup(..))
 #endif
 import Data.Word (Word8, Word32)
@@ -171,6 +171,7 @@ import GHC.IO.Handle.FD (mkHandleFromFD)
 import Streamly.Prelude (SerialT)
 import Streamly.Internal.Data.Parser (Parser)
 import Streamly.Internal.Data.Array.Storable.Foreign.Types (Array(..))
+import System.FilePath ((</>))
 import System.IO (Handle, hClose, IOMode(ReadMode))
 #if !MIN_VERSION_base(4,10,0)
 import Control.Concurrent.MVar (readMVar)
@@ -636,7 +637,7 @@ ensureTrailingSlash path =
 -- /Internal/
 --
 addToWatch :: Config -> Watch -> Array Word8 -> Array Word8 -> IO ()
-addToWatch cfg@Config{..} watch@(Watch handle wdMap) root0 path0 = do
+addToWatch cfg@Config{..} watch0@(Watch handle wdMap) root0 path0 = do
     -- XXX do not add if the path is already added
     -- XXX if the watch is added by the scan and not via an event we can
     -- generate a create event assuming that the create may have been lost. We
@@ -685,7 +686,7 @@ addToWatch cfg@Config{..} watch@(Watch handle wdMap) root0 path0 = do
     -- XXX toDirs currently uses paths as String, we need to convert it
     -- to "/" separated by byte arrays.
     when watchRec $ do
-        S.mapM_ (\p -> addToWatch cfg watch root (path <> p))
+        S.mapM_ (\p -> addToWatch cfg watch0 root (path <> p))
             $ S.mapM toUtf8
             $ Dir.toDirs $ utf8ToString absPath
 
@@ -841,35 +842,30 @@ watchToStream cfg wt@(Watch handle _) = do
     S.parseMany (readOneEvent cfg wt) $ S.unfold FH.read handle
 
 -- | Start monitoring a list of file system paths for file system events with
--- the supplied configuration operation over the 'defaultConfig'. The
--- paths could be files or directories. When the path is a directory, only the
+-- the supplied recursive mode and configuration. The paths could be files or
+-- directories. When recursive mode is True and the path is a directory, the
+-- whole directory tree under it is watched recursively.
+-- When recursive mode is False and the path is a directory, only the
 -- files and directories directly under the watched directory are monitored,
 -- contents of subdirectories are not monitored.  Monitoring starts from the
--- current time onwards. The paths are specified as "/" separated 'Array' of
+-- current time onwards. The paths are specified as UTF-8 encoded 'Array' of
 -- 'Word8'.
 --
 -- @
--- watchPathsWith
---  ('setFollowSymLinks' On . 'setUnwatchMoved' Off)
---  [Array.fromCString\# "dir"#]
+-- watch 
+--      True
+--      ('setFollowSymLinks' On . 'setUnwatchMoved' Off) 
+--      defaultConfig
+--      [Array.fromCString\# "dir"#]
 -- @
 --
 -- /Internal/
 --
-watchPathsWith ::
-    (Config -> Config) -> NonEmpty (Array Word8) -> SerialT IO Event
-watchPathsWith f = watchTreesWith (f . setRecursiveMode False)
-
--- | Like 'watchPathsWith' but uses the 'defaultConfig' options.
---
--- @
--- watchPaths = watchPathsWith id
--- @
---
--- /Internal/
---
-watchPaths :: NonEmpty (Array Word8) -> SerialT IO Event
-watchPaths = watchPathsWith id
+watch :: Bool -> Config -> NonEmpty (Array Word8) -> SerialT IO Event
+watch rec cfg paths =
+    case rec of
+        True -> watchTreesWith (\_ -> cfg) paths
+        False -> watchTreesWith (\_ -> setRecursiveMode False cfg) paths
 
 -- XXX We should not go across the mount points of network file systems or file
 -- systems that are known to not generate any events.
@@ -948,6 +944,9 @@ getRoot Event{..} =
 --
 getRelPath :: Event -> Array Word8
 getRelPath Event{..} = eventRelPath
+
+getAbsPath :: Event -> String
+getAbsPath ev = (utf8ToString $ getRoot ev) </> (utf8ToString $ getRelPath ev)
 
 -- XXX should we use a Maybe?
 -- | Cookie is set when a rename occurs. The cookie value can be used to
