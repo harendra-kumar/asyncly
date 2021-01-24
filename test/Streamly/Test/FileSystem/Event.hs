@@ -8,7 +8,7 @@
 --
 module Main (main) where
 
-import Control.Concurrent (MVar, newEmptyMVar, putMVar, takeMVar, threadDelay)
+import Control.Concurrent (MVar, newEmptyMVar, takeMVar, threadDelay)
 import Control.Monad.IO.Class (MonadIO)
 #if !defined(CABAL_OS_WINDOWS)
 import Data.Char (ord)
@@ -134,8 +134,7 @@ checkEvents rootPath m matchList = do
     paths <- mapM toUtf8 args
     putStrLn ("Watch started !!!! on Path " ++ rootPath)
     events <- S.parse (PR.takeWhile eventPredicate FL.toList)
-        $ S.before (putMVar m ())
-        $ Event.watchTrees (NonEmpty.fromList paths)
+        $ Event.watchTrees (NonEmpty.fromList paths) m
     let eventStr =  map showEventShort events
     let baseSet = Set.fromList matchList
         resultSet = Set.fromList eventStr
@@ -182,8 +181,7 @@ driver (desc, pre, ops, events) = it desc $ runTest `shouldReturn` "PASS"
             fmap fromJust $ S.head $ eventStream `S.parallelFst` fsOps
 
     runFSOps fp sync = do
-        _ <- takeMVar sync
-        threadDelay 200000
+        _ <- takeMVar sync        
         ops fp
         threadDelay 200000 -- Why this delay?
         createDirectoryIfMissing True (fp </> "EOTask")

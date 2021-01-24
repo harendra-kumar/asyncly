@@ -192,6 +192,7 @@ import qualified Streamly.Internal.Data.Stream.IsStream as S
 import qualified Streamly.Internal.FileSystem.Dir as Dir
 import qualified Streamly.Internal.FileSystem.Handle as FH
 import qualified Streamly.Internal.Unicode.Stream as U
+import Control.Concurrent (MVar, tryPutMVar)
 
 -------------------------------------------------------------------------------
 -- Subscription to events
@@ -636,8 +637,8 @@ ensureTrailingSlash path =
 --
 -- /Internal/
 --
-addToWatch :: Config -> Watch -> Array Word8 -> Array Word8 -> IO ()
-addToWatch cfg@Config{..} watch@(Watch handle wdMap) root0 path0 = do
+addToWatch :: Config -> Watch -> Array Word8 -> Array Word8 -> MVar () -> IO ()
+addToWatch cfg@Config{..} watch@(Watch handle wdMap) root0 path0 syn = do
     -- XXX do not add if the path is already added
     -- XXX if the watch is added by the scan and not via an event we can
     -- generate a create event assuming that the create may have been lost. We
@@ -686,9 +687,10 @@ addToWatch cfg@Config{..} watch@(Watch handle wdMap) root0 path0 = do
     -- XXX toDirs currently uses paths as String, we need to convert it
     -- to "/" separated by byte arrays.
     when watchRec $ do
-        S.mapM_ (\p -> addToWatch cfg watch root (path <> p))
+        S.mapM_ (\p -> addToWatch cfg watch root (path <> p) syn)
             $ S.mapM toUtf8
             $ Dir.toDirs $ utf8ToString absPath
+    void $ tryPutMVar syn ()
 
 foreign import ccall unsafe
     "sys/inotify.h inotify_rm_watch" c_inotify_rm_watch
@@ -724,10 +726,10 @@ removeFromWatch (Watch handle wdMap) path = do
 --
 -- /Internal/
 --
-openWatch :: Config -> NonEmpty (Array Word8) -> IO Watch
-openWatch cfg paths = do
+openWatch :: Config -> NonEmpty (Array Word8) -> MVar () -> IO Watch
+openWatch cfg paths syn = do
     w <- createWatch
-    mapM_ (\p -> addToWatch cfg w p (A.fromList [])) $ NonEmpty.toList paths
+    mapM_ (\p -> addToWatch cfg w p (A.fromList []) syn) $ NonEmpty.toList paths
     return w
 
 -- | Close a 'Watch' handle.
@@ -770,8 +772,8 @@ data Event = Event
 -- XXX We can perhaps use parseD monad instance for fusing with parseMany? Need
 -- to measure the perf.
 --
-readOneEvent :: Config -> Watch -> Parser IO Word8 Event
-readOneEvent cfg  wt@(Watch _ wdMap) = do
+readOneEvent :: Config -> Watch -> MVar () -> Parser IO Word8 Event
+readOneEvent cfg  wt@(Watch _ wdMap) syn = do
     let headerLen = (sizeOf (undefined :: CInt)) + 12
     arr <- PR.takeEQ headerLen (A.writeN headerLen)
     (ewd, eflags, cookie, pathLen) <- PR.yieldM $ A.asPtr arr readHeader
@@ -804,7 +806,7 @@ readOneEvent cfg  wt@(Watch _ wdMap) = do
         -- Check for "ISDIR" first because it is less likely
         isDirCreate = eflags .&. iN_ISDIR /= 0 && eflags .&. iN_CREATE /= 0
     when (watchRec cfg && isDirCreate)
-        $ PR.yieldM $ addToWatch cfg wt root sub1
+        $ PR.yieldM $ addToWatch cfg wt root sub1 syn
     -- XXX Handle IN_DELETE, IN_DELETE_SELF, IN_MOVE_SELF, IN_MOVED_FROM,
     -- IN_MOVED_TO
     -- What if a large dir tree gets moved in to our hierarchy? Do we get a
@@ -827,8 +829,8 @@ readOneEvent cfg  wt@(Watch _ wdMap) = do
         pathLen :: Word32 <- peekByteOff ptr (len + 8)
         return (ewd, eflags, cookie, fromIntegral pathLen)
 
-watchToStream :: Config -> Watch -> SerialT IO Event
-watchToStream cfg wt@(Watch handle _) = do
+watchToStream :: Config -> MVar () -> Watch -> SerialT IO Event
+watchToStream cfg syn wt@(Watch handle _) = do
     -- Do not use too small a buffer. As per inotify man page:
     --
     -- The behavior when the buffer given to read(2) is too small to return
@@ -839,7 +841,7 @@ watchToStream cfg wt@(Watch handle _) = do
     --          sizeof(struct inotify_event) + NAME_MAX + 1
     --
     -- will be sufficient to read at least one event.
-    S.parseMany (readOneEvent cfg wt) $ S.unfold FH.read handle
+    S.parseMany (readOneEvent cfg wt syn) $ S.unfold FH.read handle
 
 -- | Start monitoring a list of file system paths for file system events with
 -- the supplied configuration operation over the 'defaultConfig'. The
@@ -858,7 +860,7 @@ watchToStream cfg wt@(Watch handle _) = do
 -- /Internal/
 --
 watchPathsWith ::
-    (Config -> Config) -> NonEmpty (Array Word8) -> SerialT IO Event
+    (Config -> Config) -> NonEmpty (Array Word8) -> MVar () -> SerialT IO Event
 watchPathsWith f = watchTreesWith (f . setRecursiveMode False)
 
 -- | Like 'watchPathsWith' but uses the 'defaultConfig' options.
@@ -869,7 +871,7 @@ watchPathsWith f = watchTreesWith (f . setRecursiveMode False)
 --
 -- /Internal/
 --
-watchPaths :: NonEmpty (Array Word8) -> SerialT IO Event
+watchPaths :: NonEmpty (Array Word8) -> MVar () -> SerialT IO Event
 watchPaths = watchPathsWith id
 
 -- XXX We should not go across the mount points of network file systems or file
@@ -899,13 +901,13 @@ watchPaths = watchPathsWith id
 -- /Internal/
 --
 watchTreesWith ::
-    (Config -> Config) -> NonEmpty (Array Word8) -> SerialT IO Event
-watchTreesWith f paths = S.bracket before after (watchToStream cfg)
+    (Config -> Config) -> NonEmpty (Array Word8) -> MVar () -> SerialT IO Event
+watchTreesWith f paths syn = S.bracket before after (watchToStream cfg syn)
 
     where
 
     cfg = f defaultConfig
-    before = liftIO $ openWatch cfg paths
+    before = liftIO $ openWatch cfg paths syn
     after = liftIO . closeWatch
 
 -- | Like 'watchTreesWith' but uses the 'defaultConfig' options.
@@ -914,8 +916,8 @@ watchTreesWith f paths = S.bracket before after (watchToStream cfg)
 -- watchTrees = watchTreesWith id
 -- @
 --
-watchTrees :: NonEmpty (Array Word8) -> SerialT IO Event
-watchTrees = watchTreesWith id
+watchTrees :: NonEmpty (Array Word8) -> MVar () -> SerialT IO Event
+watchTrees p syn = watchTreesWith id p syn
 
 -------------------------------------------------------------------------------
 -- Examine event stream

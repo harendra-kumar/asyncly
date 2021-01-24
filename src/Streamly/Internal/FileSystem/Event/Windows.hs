@@ -126,6 +126,7 @@ import qualified Streamly.Internal.Data.Stream.IsStream as S
 import qualified Streamly.Internal.Unicode.Stream as U
 import qualified Streamly.Internal.Data.Array.Storable.Foreign as A
 import Streamly.Internal.Data.Array.Storable.Foreign (Array)
+import Control.Concurrent (MVar, tryPutMVar)
 
 -- | Watch configuration, used to specify the events of interest and the
 -- behavior of the watch.
@@ -342,11 +343,12 @@ readChangeEvents pfni root bytesRet = do
     return $ entry : entries
 
 readDirectoryChanges ::
-    String -> HANDLE -> Bool -> FileNotificationFlag -> IO [Event]
-readDirectoryChanges root h wst mask = do
+    String -> HANDLE -> Bool -> FileNotificationFlag -> MVar () -> IO [Event]
+readDirectoryChanges root h wst mask syn = do
     let maxBuf = 63 * 1024
     allocaBytes maxBuf $ \buffer -> do
         alloca $ \bret -> do
+            _ <- tryPutMVar syn ()
             readDirectoryChangesW h buffer (toEnum maxBuf) wst mask bret
             bytesRet <- peekByteOff bret 0
             readChangeEvents buffer root bytesRet
@@ -368,12 +370,13 @@ fILE_ACTION_RENAMED_OLD_NAME  =  4
 fILE_ACTION_RENAMED_NEW_NAME  :: FileAction
 fILE_ACTION_RENAMED_NEW_NAME  =  5
 
-eventStreamAggr :: (HANDLE, FilePath, Config) -> SerialT IO Event
-eventStreamAggr (handle, rootPath, cfg) =  do
+eventStreamAggr :: MVar () ->  (HANDLE, FilePath, Config) -> SerialT IO Event
+eventStreamAggr syn (handle, rootPath, cfg)  =  do
     let recMode = getConfigRecMode cfg
         flagMasks = getConfigFlag cfg
     S.concatMap S.fromList $ S.repeatM
-        $ readDirectoryChanges rootPath handle recMode flagMasks
+        $ readDirectoryChanges rootPath handle recMode flagMasks syn
+
 
 pathsToHandles ::
     NonEmpty FilePath -> Config -> SerialT IO (HANDLE, FilePath, Config)
@@ -411,6 +414,7 @@ closePathHandleStream = S.mapM_ (\(h, _, _) -> closeHandle h)
 watchPathsWith ::
        (Config -> Config)
     -> NonEmpty (Array Word8)
+    -> MVar ()
     -> SerialT IO Event
 watchPathsWith f = watchTreesWith (f . setRecursiveMode False)
 
@@ -422,7 +426,7 @@ watchPathsWith f = watchTreesWith (f . setRecursiveMode False)
 --
 -- /Internal/
 --
-watchPaths :: NonEmpty (Array Word8) -> SerialT IO Event
+watchPaths :: NonEmpty (Array Word8) ->  MVar () -> SerialT IO Event
 watchPaths = watchPathsWith id
 
 -- XXX
@@ -444,9 +448,10 @@ watchPaths = watchPathsWith id
 watchTreesWith ::
        (Config -> Config)
     -> NonEmpty (Array Word8)
+    -> MVar ()
     -> SerialT IO Event
-watchTreesWith f paths =
-     S.bracket before after (S.concatMapWith parallel eventStreamAggr)
+watchTreesWith f paths syn =
+     S.bracket before after (S.concatMapWith parallel (eventStreamAggr syn))
 
     where
 
@@ -461,7 +466,7 @@ watchTreesWith f paths =
 -- watchTrees = watchTreesWith id
 -- @
 --
-watchTrees :: NonEmpty (Array Word8) -> SerialT IO Event
+watchTrees :: NonEmpty (Array Word8) -> MVar () -> SerialT IO Event
 watchTrees = watchTreesWith id
 
 -- | Add a trailing "\" at the end of the path if there is none. Do not add a
