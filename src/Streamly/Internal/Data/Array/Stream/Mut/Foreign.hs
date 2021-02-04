@@ -135,8 +135,8 @@ packArraysChunksOf n (D.Stream step state) =
 {-# INLINE_NORMAL lpackArraysChunksOf #-}
 lpackArraysChunksOf :: (MonadIO m, Storable a)
     => Int -> Fold m (Array a) () -> Fold m (Array a) ()
-lpackArraysChunksOf n (Fold step1 initial1 extract1) =
-    Fold step initial extract
+lpackArraysChunksOf n (Fold step1 initial1 extract1 clean1) =
+    Fold step initial extract clean
 
     where
 
@@ -156,6 +156,13 @@ lpackArraysChunksOf n (Fold step1 initial1 extract1) =
             FL.Partial rr -> extract1 rr
             FL.Done _ -> return ()
 
+    clean (Tuple' Nothing r1) = clean1 r1
+    clean (Tuple' (Just buf) r1) = do
+        r <- step1 r1 buf
+        case r of
+            FL.Partial rr -> clean1 rr
+            FL.Done _ -> return ()
+
     step (Tuple' Nothing r1) arr =
             let len = MArray.byteLength arr
              in if len >= n
@@ -164,7 +171,7 @@ lpackArraysChunksOf n (Fold step1 initial1 extract1) =
                     case r of
                         FL.Done _ -> return $ FL.Done ()
                         FL.Partial s -> do
-                            extract1 s
+                            clean1 s
                             res <- initial1
                             return $ first (Tuple' Nothing) res
                 else return $ FL.Partial $ Tuple' (Just arr) r1
@@ -183,7 +190,7 @@ lpackArraysChunksOf n (Fold step1 initial1 extract1) =
                 case r of
                     FL.Done _ -> return $ FL.Done ()
                     FL.Partial s -> do
-                        extract1 s
+                        clean1 s
                         res <- initial1
                         return $ first (Tuple' Nothing) res
             else return $ FL.Partial $ Tuple' (Just buf'') r1

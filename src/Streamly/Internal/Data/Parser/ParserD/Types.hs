@@ -137,7 +137,7 @@ import Fusion.Plugin.Types (Fuse(..))
 import Streamly.Internal.Data.Fold.Types (Fold(..), toList)
 import Streamly.Internal.Data.Tuple.Strict (Tuple3'(..))
 
-import qualified Streamly.Internal.Data.Fold as FL
+import qualified Streamly.Internal.Data.Fold.Types as FL
 
 import Prelude hiding (concatMap)
 
@@ -436,7 +436,8 @@ alt (Parser stepL initialL extractL) (Parser stepR initialR extractR) =
 --
 {-# INLINE splitMany #-}
 splitMany :: MonadCatch m => Fold m b c -> Parser m a b -> Parser m a c
-splitMany (Fold fstep finitial fextract) (Parser step1 initial1 extract1) =
+splitMany (Fold fstep finitial fextract fclean)
+          (Parser step1 initial1 extract1) =
     Parser step initial extract
 
     where
@@ -470,7 +471,7 @@ splitMany (Fold fstep finitial fextract) (Parser step1 initial1 extract1) =
                           FL.Partial s1 -> Partial n (Tuple3' s 0 s1)
                           FL.Done b1 -> Done n b1
             Error _ -> do
-                xs <- fextract fs
+                xs <- FL.finalExtract fextract fclean fs
                 return $ Done cnt1 xs
 
     -- XXX The "try" may impact performance if this parser is used as a scan
@@ -490,7 +491,8 @@ splitMany (Fold fstep finitial fextract) (Parser step1 initial1 extract1) =
 --
 {-# INLINE splitSome #-}
 splitSome :: MonadCatch m => Fold m b c -> Parser m a b -> Parser m a c
-splitSome (Fold fstep finitial fextract) (Parser step1 initial1 extract1) =
+splitSome (Fold fstep finitial fextract fclean)
+          (Parser step1 initial1 extract1) =
     Parser step initial extract
 
     where
@@ -543,7 +545,7 @@ splitSome (Fold fstep finitial fextract) (Parser step1 initial1 extract1) =
                     $ case fs1 of
                           FL.Partial s1 -> Partial n (Tuple3' s 0 (Right s1))
                           FL.Done b1 -> Done n b1
-            Error _ -> Done cnt1 <$> fextract fs
+            Error _ -> Done cnt1 <$> FL.finalExtract fextract fclean fs
 
     -- XXX The "try" may impact performance if this parser is used as a scan
     extract (Tuple3' s _ (Left fs)) = do

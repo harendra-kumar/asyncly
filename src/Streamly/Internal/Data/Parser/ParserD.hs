@@ -166,6 +166,10 @@ import Prelude hiding
 import Streamly.Internal.Data.Parser.ParserD.Tee
 import Streamly.Internal.Data.Parser.ParserD.Types
 
+-- XXX Parsers will also have a cleanup action later. The correct behaviour is
+-- for the parsers to clean up the Fold resources while extracting. This is
+-- omitted now.
+
 -------------------------------------------------------------------------------
 -- Upgrade folds to parses
 -------------------------------------------------------------------------------
@@ -176,7 +180,7 @@ import Streamly.Internal.Data.Parser.ParserD.Types
 --
 {-# INLINE fromFold #-}
 fromFold :: Monad m => Fold m a b -> Parser m a b
-fromFold (Fold fstep finitial fextract) = Parser step finitial extract
+fromFold (Fold fstep finitial fextract _) = Parser step finitial extract
 
     where
 
@@ -292,7 +296,7 @@ either parser = Parser step initial extract
 --
 {-# INLINE takeBetween #-}
 takeBetween :: MonadCatch m => Int -> Int -> Fold m a b -> Parser m a b
-takeBetween low high (Fold fstep finitial fextract) =
+takeBetween low high (Fold fstep finitial fextract fcleanup) =
 
     Parser step initial extract
 
@@ -311,7 +315,7 @@ takeBetween low high (Fold fstep finitial fextract) =
                 $ ParseError
                 $ "takeBetween: lower bound - " ++ show low
                     ++ " is greater than higher bound - " ++ show high
-        | high <= 0 = Done 1 <$> fextract s
+        | high <= 0 = Done 1 <$> FL.finalExtract fextract fcleanup s
         | i1 < low = do
             res <- fstep s a
             return
@@ -327,7 +331,7 @@ takeBetween low high (Fold fstep finitial fextract) =
             case res of
                 FL.Partial s1 ->
                     if i1 >= high
-                    then Done 0 <$> fextract s1
+                    then Done 0 <$> FL.finalExtract fextract fcleanup s1
                     else return $ Partial 0 $ Tuple' i1 s1
                 FL.Done b -> return $ Done 0 b
 
@@ -351,7 +355,7 @@ takeBetween low high (Fold fstep finitial fextract) =
 --
 {-# INLINE takeEQ #-}
 takeEQ :: MonadThrow m => Int -> Fold m a b -> Parser m a b
-takeEQ n (Fold fstep finitial fextract) = Parser step initial extract
+takeEQ n (Fold fstep finitial fextract fcleanup) = Parser step initial extract
 
     where
 
@@ -378,11 +382,11 @@ takeEQ n (Fold fstep finitial fextract) = Parser step initial extract
             res <- fstep r a
             Done 0
                 <$> case res of
-                        FL.Partial s -> fextract s
+                        FL.Partial s -> FL.finalExtract fextract fcleanup s
                         FL.Done b -> return b
         -- XXX we should not reach here when initial returns Step type
         -- reachable only when n == 0
-        | otherwise = Done 1 <$> fextract r
+        | otherwise = Done 1 <$> FL.finalExtract fextract fcleanup r
 
         where
 
@@ -402,7 +406,7 @@ takeEQ n (Fold fstep finitial fextract) = Parser step initial extract
 --
 {-# INLINE takeGE #-}
 takeGE :: MonadThrow m => Int -> Fold m a b -> Parser m a b
-takeGE n (Fold fstep finitial fextract) = Parser step initial extract
+takeGE n (Fold fstep finitial fextract _) = Parser step initial extract
 
     where
 
@@ -449,7 +453,7 @@ takeGE n (Fold fstep finitial fextract) = Parser step initial extract
 --
 {-# INLINE takeWhile #-}
 takeWhile :: Monad m => (a -> Bool) -> Fold m a b -> Parser m a b
-takeWhile predicate (Fold fstep finitial fextract) =
+takeWhile predicate (Fold fstep finitial fextract fcleanup) =
     Parser step initial fextract
 
     where
@@ -469,7 +473,7 @@ takeWhile predicate (Fold fstep finitial fextract) =
                 $ case fres of
                       FL.Partial s1 -> Partial 0 s1
                       FL.Done b -> Done 0 b
-        else Done 1 <$> fextract s
+        else Done 1 <$> FL.finalExtract fextract fcleanup s
 
 -- | See 'Streamly.Internal.Data.Parser.takeWhile1'.
 --
@@ -477,7 +481,7 @@ takeWhile predicate (Fold fstep finitial fextract) =
 --
 {-# INLINE takeWhile1 #-}
 takeWhile1 :: MonadThrow m => (a -> Bool) -> Fold m a b -> Parser m a b
-takeWhile1 predicate (Fold fstep finitial fextract) =
+takeWhile1 predicate (Fold fstep finitial fextract fcleanup) =
     Parser step initial extract
 
     where
@@ -506,7 +510,7 @@ takeWhile1 predicate (Fold fstep finitial fextract) =
                 FL.Partial r -> return $ Partial 0 (Just r)
                 FL.Done b -> return $ Done 0 b
         else do
-            b <- fextract s
+            b <- FL.finalExtract fextract fcleanup s
             return $ Done 1 b
 
     extract Nothing = throwM $ ParseError "takeWhile1: end of input"
@@ -550,7 +554,8 @@ data WordByState s b = WBLeft !s | WBWord !s | WBRight !b
 --
 {-# INLINE wordBy #-}
 wordBy :: Monad m => (a -> Bool) -> Fold m a b -> Parser m a b
-wordBy predicate (Fold fstep finitial fextract) = Parser step initial extract
+wordBy predicate (Fold fstep finitial fextract fcleanup) =
+    Parser step initial extract
 
     where
 
@@ -577,7 +582,7 @@ wordBy predicate (Fold fstep finitial fextract) = Parser step initial extract
         if not (predicate a)
         then worder s a
         else do
-            b <- fextract s
+            b <- FL.finalExtract fextract fcleanup s
             return $ Partial 0 $ WBRight b
     step (WBRight b) a =
         return
@@ -597,7 +602,7 @@ data GroupByState a s
 --
 {-# INLINE groupBy #-}
 groupBy :: Monad m => (a -> a -> Bool) -> Fold m a b -> Parser m a b
-groupBy eq (Fold fstep finitial fextract) = Parser step initial extract
+groupBy eq (Fold fstep finitial fextract fcleanup) = Parser step initial extract
 
     where
 
@@ -620,7 +625,7 @@ groupBy eq (Fold fstep finitial fextract) = Parser step initial extract
     step (GroupByGrouping a0 s) a =
         if eq a0 a
         then grouper s a0 a
-        else Done 1 <$> fextract s
+        else Done 1 <$> FL.finalExtract fextract fcleanup s
 
     extract (GroupByInit s) = fextract s
     extract (GroupByGrouping _ s) = fextract s
@@ -629,7 +634,8 @@ groupBy eq (Fold fstep finitial fextract) = Parser step initial extract
 --
 {-# INLINE groupByRolling #-}
 groupByRolling :: Monad m => (a -> a -> Bool) -> Fold m a b -> Parser m a b
-groupByRolling eq (Fold fstep finitial fextract) = Parser step initial extract
+groupByRolling eq (Fold fstep finitial fextract fcleanup) =
+    Parser step initial extract
 
     where
 
@@ -652,7 +658,7 @@ groupByRolling eq (Fold fstep finitial fextract) = Parser step initial extract
     step (GroupByGrouping a0 s) a =
         if eq a0 a
         then grouper s a
-        else Done 1 <$> fextract s
+        else Done 1 <$> FL.finalExtract fextract fcleanup s
 
     extract (GroupByInit s) = fextract s
     extract (GroupByGrouping _ s) = fextract s
@@ -827,7 +833,7 @@ data ManyTillState fs sr sl
 {-# INLINE manyTill #-}
 manyTill :: MonadCatch m
     => Fold m b c -> Parser m a b -> Parser m a x -> Parser m a c
-manyTill (Fold fstep finitial fextract)
+manyTill (Fold fstep finitial fextract fcleanup)
          (Parser stepL initialL extractL)
          (Parser stepR initialR _) =
     Parser step initial extract
@@ -848,7 +854,7 @@ manyTill (Fold fstep finitial fextract)
                 assert (cnt + 1 - n >= 0) (return ())
                 return $ Continue n (ManyTillR (cnt + 1 - n) fs s)
             Done n _ -> do
-                b <- fextract fs
+                b <- FL.finalExtract fextract fcleanup fs
                 return $ Done n b
             Error _ -> do
                 rR <- initialL

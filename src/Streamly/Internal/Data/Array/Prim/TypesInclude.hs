@@ -592,8 +592,8 @@ lpackArraysChunksOf ::
     => Int
     -> Fold m (Array a) ()
     -> Fold m (Array a) ()
-lpackArraysChunksOf n (Fold step1 initial1 extract1) =
-    Fold step initial extract
+lpackArraysChunksOf n (Fold step1 initial1 extract1 clean1) =
+    Fold step initial extract clean
 
     where
 
@@ -615,6 +615,14 @@ lpackArraysChunksOf n (Fold step1 initial1 extract1) =
             FL.Partial rr -> extract1 rr
             FL.Done _ -> return ()
 
+    clean (Tuple3' Nothing' _ r1) = clean1 r1
+    clean (Tuple3' (Just' buf) boff r1) = do
+        nArr <- unsafeFreeze buf
+        r <- step1 r1 (slice nArr 0 boff)
+        case r of
+            FL.Partial rr -> clean1 rr
+            FL.Done _ -> return ()
+
     step (Tuple3' Nothing' _ r1) arr =
             if length arr >= nElem
             then do
@@ -622,7 +630,7 @@ lpackArraysChunksOf n (Fold step1 initial1 extract1) =
                 case r of
                     FL.Done _ -> return $ FL.Done ()
                     FL.Partial s -> do
-                        extract1 s
+                        clean1 s
                         res <- initial1
                         return $ first (Tuple3' Nothing' 0) res
             else do
@@ -640,7 +648,7 @@ lpackArraysChunksOf n (Fold step1 initial1 extract1) =
                 case r of
                     FL.Done _ -> return $ FL.Done ()
                     FL.Partial s -> do
-                        extract1 s
+                        clean1 s
                         res <- initial1
                         return $ first (Tuple3' Nothing' 0) res
             else return $ FL.Partial $ Tuple3' (Just' buf) noff r1

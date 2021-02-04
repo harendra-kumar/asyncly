@@ -137,7 +137,7 @@ writeNAligned ::
     => Int
     -> Int
     -> Fold m a (Array a)
-writeNAligned align limit = Fold step initial extract
+writeNAligned align limit = FL.mkFoldM step initial extract
 
     where
 

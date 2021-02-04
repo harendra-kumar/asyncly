@@ -270,7 +270,7 @@ last arr = readIndex arr (length arr - 1)
 lastN :: (Storable a, MonadIO m) => Int -> Fold m a (Array a)
 lastN n
     | n <= 0 = fmap (const mempty) FL.drain
-    | otherwise = A.unsafeFreeze <$> Fold step initial done
+    | otherwise = A.unsafeFreeze <$> FL.mkFoldM step initial done
   where
     step (Tuple3' rb rh i) a = do
         rh1 <- liftIO $ RB.unsafeInsert rb rh a

@@ -299,7 +299,7 @@ toSVar sv m = toStreamVar sv $ K.toStream m
 --
 {-# INLINE write #-}
 write :: MonadIO m => SVar t m a -> Maybe WorkerInfo -> Fold m a ()
-write svar winfo = Fold step initial extract
+write svar winfo = Fold step initial extract cleanup
 
     where
 
@@ -313,14 +313,16 @@ write svar winfo = Fold step initial extract
             void $ send svar (ChildYield x)
             return $ FL.Partial ()
 
-    extract () = liftIO $ sendStop svar winfo
+    extract () = return ()
+
+    cleanup () = liftIO $ sendStop svar winfo
 
 -- | Like write, but applies a yield limit.
 --
 {-# INLINE writeLimited #-}
 writeLimited :: MonadIO m
     => SVar t m a -> Maybe WorkerInfo -> Fold m a ()
-writeLimited svar winfo = Fold step initial extract
+writeLimited svar winfo = Fold step initial extract cleanup
 
     where
 
@@ -340,8 +342,10 @@ writeLimited svar winfo = Fold step initial extract
                 return $ FL.Done ()
     step False _ = return $ FL.Done ()
 
-    extract True = liftIO $ sendStop svar winfo
-    extract False = return ()
+    extract _ = return ()
+
+    cleanup True = liftIO $ sendStop svar winfo
+    cleanup False = return ()
 
 -- Using StreamD the worker stream producing code can fuse with the code to
 -- queue output to the SVar giving some perf boost.

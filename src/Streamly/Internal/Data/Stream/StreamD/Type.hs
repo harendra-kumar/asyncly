@@ -269,7 +269,7 @@ toStreamD = fromStreamK . K.toStream
 
 {-# INLINE_NORMAL foldOnce #-}
 foldOnce :: (Monad m) => Fold m a b -> Stream m a -> m b
-foldOnce (Fold fstep begin done) (Stream step state) = do
+foldOnce (Fold fstep begin done cleanup) (Stream step state) = do
     res <- begin
     case res of
         FL.Partial fs -> go SPEC fs state
@@ -287,7 +287,7 @@ foldOnce (Fold fstep begin done) (Stream step state) = do
                     FL.Done b -> return b
                     FL.Partial fs1 -> go SPEC fs1 s
             Skip s -> go SPEC fs s
-            Stop -> done fs
+            Stop -> FL.finalExtract done cleanup fs
 
 ------------------------------------------------------------------------------
 -- Right Folds
@@ -805,7 +805,7 @@ data GroupState s fs b a
 --
 {-# INLINE_NORMAL foldMany #-}
 foldMany :: Monad m => Fold m a b -> Stream m a -> Stream m b
-foldMany (Fold fstep initial extract) (Stream step state) =
+foldMany (Fold fstep initial extract cleanup) (Stream step state) =
     Stream step' (GroupStart state)
 
     where
@@ -833,7 +833,7 @@ foldMany (Fold fstep initial extract) (Stream step state) =
             Yield x s -> return $ Skip $ GroupConsume s fs x
             Skip s -> return $ Skip (GroupBuffer s fs)
             Stop -> do
-                b <- extract fs
+                b <- FL.finalExtract extract cleanup fs
                 return $ Skip (GroupYield b GroupFinish)
     step' _ (GroupYield b next) = return $ Yield b next
     step' _ GroupFinish = return Stop
@@ -865,7 +865,7 @@ data FoldMany1 s fs b a
 --
 {-# INLINE_NORMAL foldMany1 #-}
 foldMany1 :: Monad m => Fold m a b -> Stream m a -> Stream m b
-foldMany1 (Fold fstep initial extract) (Stream step state) =
+foldMany1 (Fold fstep initial extract cleanup) (Stream step state) =
     Stream step' (FoldMany1Start state)
 
     where
@@ -898,7 +898,7 @@ foldMany1 (Fold fstep initial extract) (Stream step state) =
             Yield x s -> return $ Skip $ FoldMany1Consume s fs x
             Skip s -> return $ Skip (FoldMany1Gen s fs)
             Stop -> do
-                b <- extract fs
+                b <- FL.finalExtract extract cleanup fs
                 return $ Skip (FoldMany1Yield b FoldMany1Done)
     step' _ (FoldMany1Yield b next) = return $ Yield b next
     step' _ FoldMany1Done = return Stop

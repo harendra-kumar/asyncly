@@ -107,7 +107,7 @@ foldr f z arr = runIdentity $ D.foldr f z $ toStreamD arr
 -- writeN n = S.evertM (fromStreamDN n)
 {-# INLINE_NORMAL writeN #-}
 writeN :: MonadIO m => Int -> Fold m a (Array a)
-writeN limit = Fold step initial extract
+writeN limit = FL.mkFoldM step initial extract
   where
     initial = do
         marr <- liftIO $ newArray limit bottomElement
@@ -121,7 +121,7 @@ writeN limit = Fold step initial extract
 
 {-# INLINE_NORMAL write #-}
 write :: MonadIO m => Fold m a (Array a)
-write = Fold step initial extract
+write = FL.mkFoldM step initial extract
   where
     initial = do
         marr <- liftIO $ newArray 0 bottomElement

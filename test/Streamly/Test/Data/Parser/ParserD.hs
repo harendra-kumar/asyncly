@@ -510,8 +510,7 @@ many =
     forAll (listOf (chooseInt (0, 1)))
       $ \ls ->
             let fldstp conL currL = return $ FL.Partial (conL ++ currL)
-                concatFold =
-                    FL.Fold fldstp (return (FL.Partial [])) return
+                concatFold = FL.mkFoldM_ fldstp (return (FL.Partial []))
                 prsr =
                     P.many concatFold
                         $ P.fromFold $ FL.sliceSepBy (== 1) FL.toList
@@ -531,7 +530,7 @@ some =
     forAll (listOf (chooseInt (0, 1)))
       $ \ls ->
             let fldstp conL currL = return $ FL.Partial $ conL ++ currL
-                concatFold = FL.Fold fldstp (return (FL.Partial [])) return
+                concatFold = FL.mkFoldM_ fldstp (return (FL.Partial []))
                 prsr =
                     P.some concatFold
                         $ P.fromFold $ FL.sliceSepBy (== 1) FL.toList

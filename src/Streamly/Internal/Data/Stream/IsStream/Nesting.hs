@@ -1751,6 +1751,7 @@ data SessionState t m k a b = SessionState
     , sessionOutputStream :: t (m :: Type -> Type) (k, b) -- ^ Completed sessions
     }
 
+-- XXX Need to check where to cleanup
 -- XXX Perhaps we should use an "Event a" type to represent timestamped data.
 -- | @classifySessionsBy tick timeout idle pred f stream@ groups timestamped
 -- events in an input event stream into sessions based on a session key. Each
@@ -1792,7 +1793,7 @@ classifySessionsBy
     -> t m (k, a, AbsTime) -- ^ session key, data, timestamp
     -> t m (k, b) -- ^ session key, fold result
 classifySessionsBy tick tmout reset ejectPred
-    (Fold step initial extract) str =
+    (Fold step initial extract _) str =
     concatMap sessionOutputStream $
         scanlMAfter' sstep (return szero) flush stream
 

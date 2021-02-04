@@ -140,7 +140,7 @@ import Streamly.Internal.Data.Time.Units
        (TimeUnit64, toRelTime64, diffAbsTime64)
 
 import qualified Streamly.Internal.Data.Array.Foreign.Types as A
-import qualified Streamly.Internal.Data.Fold as FL
+import qualified Streamly.Internal.Data.Fold.Types as FL
 import qualified Streamly.Internal.Data.IORef.Prim as Prim
 import qualified Streamly.Internal.Data.Pipe.Types as Pipe
 import qualified Streamly.Internal.Data.Stream.StreamK as K
@@ -246,7 +246,7 @@ data TapState fs st a
 -- XXX Multiple yield points
 {-# INLINE tap #-}
 tap :: Monad m => Fold m a b -> Stream m a -> Stream m a
-tap (Fold fstep initial extract) (Stream step state) = Stream step' TapInit
+tap (Fold fstep initial _ cleanup) (Stream step state) = Stream step' TapInit
 
     where
 
@@ -269,7 +269,7 @@ tap (Fold fstep initial extract) (Stream step state) = Stream step' TapInit
                           FL.Done _ -> TapDone s
             Skip s -> return $ Skip (Tapping acc s)
             Stop -> do
-                void $ extract acc
+                cleanup acc
                 return Stop
     step' gst (TapDone st) = do
         r <- step gst st
@@ -288,7 +288,7 @@ data TapOffState fs s a
 {-# INLINE_NORMAL tapOffsetEvery #-}
 tapOffsetEvery :: Monad m
     => Int -> Int -> Fold m a b -> Stream m a -> Stream m a
-tapOffsetEvery offset n (Fold fstep initial extract) (Stream step state) =
+tapOffsetEvery offset n (Fold fstep initial _ cleanup) (Stream step state) =
     Stream step' TapOffInit
 
     where
@@ -318,7 +318,7 @@ tapOffsetEvery offset n (Fold fstep initial extract) (Stream step state) =
                 return $ Yield x next
             Skip s -> return $ Skip (TapOffTapping acc s count)
             Stop -> do
-                void $ extract acc
+                cleanup acc
                 return Stop
     step' gst (TapOffDone st) = do
         r <- step gst st
@@ -413,7 +413,7 @@ data ScanState s f = ScanInit s | ScanDo s !f | ScanDone
 
 {-# INLINE_NORMAL postscanOnce #-}
 postscanOnce :: Monad m => FL.Fold m a b -> Stream m a -> Stream m b
-postscanOnce (FL.Fold fstep initial extract) (Stream sstep state) =
+postscanOnce (FL.Fold fstep initial extract cleanup) (Stream sstep state) =
     Stream step (ScanInit state)
 
     where
@@ -432,7 +432,7 @@ postscanOnce (FL.Fold fstep initial extract) (Stream sstep state) =
                 r <- fstep fs x
                 case r of
                     FL.Partial fs1 -> do
-                        !b <- extract fs1
+                        !b <- FL.finalExtract extract cleanup fs1
                         return $ Yield b $ ScanDo s fs1
                     FL.Done b -> return $ Yield b ScanDone
             Skip s -> return $ Skip $ ScanDo s fs
@@ -442,7 +442,7 @@ postscanOnce (FL.Fold fstep initial extract) (Stream sstep state) =
 {-# INLINE scanOnce #-}
 scanOnce :: Monad m
     => FL.Fold m a b -> Stream m a -> Stream m b
-scanOnce (FL.Fold fstep initial extract) (Stream sstep state) =
+scanOnce (FL.Fold fstep initial extract cleanup) (Stream sstep state) =
     Stream step (ScanInit state)
 
     where
@@ -466,7 +466,7 @@ scanOnce (FL.Fold fstep initial extract) (Stream sstep state) =
                         return $ Yield b $ ScanDo s fs1
                     FL.Done b -> return $ Yield b ScanDone
             Skip s -> return $ Skip $ ScanDo s fs
-            Stop -> return Stop
+            Stop -> cleanup fs >> return Stop
     step _ ScanDone = return Stop
 
 ------------------------------------------------------------------------------

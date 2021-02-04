@@ -66,7 +66,7 @@ import Prelude
                reverse, iterate, init, and, or, lookup, foldr1, (!!),
                scanl, scanl1, replicate, concatMap, mconcat, foldMap, unzip)
 
-import Streamly.Internal.Data.Fold.Types (Fold(..), Step(..))
+import Streamly.Internal.Data.Fold.Types (Fold(..), Step(..), nocleanup)
 import Streamly.Internal.Data.Sink.Types (Sink(..))
 
 import qualified Data.Map.Strict as Map
@@ -78,7 +78,7 @@ import qualified Data.Map.Strict as Map
 -- | Convert a 'Sink' to a 'Fold'. When you want to compose sinks and folds
 -- together, upgrade a sink to a fold before composing.
 toFold :: Monad m => Sink m a -> Fold m a ()
-toFold (Sink f) = Fold step begin done
+toFold (Sink f) = Fold step begin done nocleanup
     where
     begin = return $ Partial ()
     step _ a = Partial <$> f a

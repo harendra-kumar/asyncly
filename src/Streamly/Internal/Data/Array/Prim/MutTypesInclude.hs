@@ -12,7 +12,7 @@ import Streamly.Internal.Data.Fold.Types (Fold(..))
 import Streamly.Internal.Data.SVar (adaptState)
 import Streamly.Internal.Data.Tuple.Strict (Tuple'(..), Tuple3'(..))
 
-import qualified Streamly.Internal.Data.Fold as FL
+import qualified Streamly.Internal.Data.Fold.Types as FL
 import qualified Streamly.Internal.Data.Stream.StreamD as D
 
 import GHC.Exts
@@ -163,7 +163,7 @@ write = FL.mkAccumM step initial extract
 -- /Internal/
 {-# INLINE_NORMAL writeN #-}
 writeN :: (MonadIO m, Prim a) => Int -> Fold m a (Array a)
-writeN limit = Fold step initial extract
+writeN limit = FL.mkFoldM step initial extract
 
     where
 
@@ -355,8 +355,8 @@ packArraysChunksOf n (D.Stream step state) =
 {-# INLINE_NORMAL lpackArraysChunksOf #-}
 lpackArraysChunksOf ::
        (MonadIO m, Prim a) => Int -> Fold m (Array a) () -> Fold m (Array a) ()
-lpackArraysChunksOf n (Fold step1 initial1 extract1) =
-    Fold step initial extract
+lpackArraysChunksOf n (Fold step1 initial1 extract1 clean1) =
+    Fold step initial extract clean
 
     where
 
@@ -378,6 +378,13 @@ lpackArraysChunksOf n (Fold step1 initial1 extract1) =
             FL.Partial rr -> extract1 rr
             FL.Done () -> return ()
 
+    clean (Tuple' Nothing r1) = clean1 r1
+    clean (Tuple' (Just buf) r1) = do
+        r <- step1 r1 buf
+        case r of
+            FL.Partial rr -> clean1 rr
+            FL.Done () -> return ()
+
     step (Tuple' Nothing r1) arr = do
         len <- byteLength arr
         if len >= n
@@ -386,7 +393,7 @@ lpackArraysChunksOf n (Fold step1 initial1 extract1) =
             case r of
                 FL.Done () -> return $ FL.Done ()
                 FL.Partial s -> do
-                    extract1 s
+                    clean1 s
                     res <- initial1
                     return $ first (Tuple' Nothing) res
         else return $ FL.Partial $ Tuple' (Just arr) r1
@@ -401,7 +408,7 @@ lpackArraysChunksOf n (Fold step1 initial1 extract1) =
             case r of
                 FL.Done () -> return $ FL.Done ()
                 FL.Partial s -> do
-                    extract1 s
+                    clean1 s
                     res <- initial1
                     return $ first (Tuple' Nothing) res
         else return $ FL.Partial $ Tuple' (Just buf') r1

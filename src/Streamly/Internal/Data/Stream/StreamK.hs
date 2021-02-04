@@ -398,7 +398,7 @@ foldlMx' step begin done m = go begin m
 
 {-# INLINABLE foldOnce #-}
 foldOnce :: (IsStream t, Monad m) => FL.Fold m a b -> t m a -> m b
-foldOnce (FL.Fold step begin done) m = do
+foldOnce (FL.Fold step begin done clean) m = do
     res <- begin
     case res of
         FL.Partial fs -> go fs m
@@ -406,7 +406,7 @@ foldOnce (FL.Fold step begin done) m = do
 
     where
     go !acc m1 =
-        let stop = done acc
+        let stop = FL.finalExtract done clean acc
             single a = step acc a
               >>= \case
                         FL.Partial s -> done s

@@ -259,8 +259,8 @@ import Streamly.Internal.Data.Fold.Types
 --
 -- /Internal/
 hoist :: (forall x. m x -> n x) -> Fold m a b -> Fold n a b
-hoist f (Fold step initial extract) =
-    Fold (\x a -> f $ step x a) (f initial) (f . extract)
+hoist f (Fold step initial extract cleanup) =
+    Fold (\x a -> f $ step x a) (f initial) (f . extract) (f . cleanup)
 
 -- | Adapt a pure fold to any monad
 --
@@ -279,7 +279,7 @@ generally = hoist (return . runIdentity)
 -- @since 0.8.0
 {-# INLINE rsequence #-}
 rsequence :: Monad m => Fold m a (m b) -> Fold m a b
-rsequence (Fold step initial extract) = Fold step' initial1 extract'
+rsequence (Fold step initial extract clean) = Fold step' initial1 extract' clean
 
     where
 
@@ -342,8 +342,8 @@ mapMaybe f = map f . filter isJust . map fromJust
 -- @since 0.7.0
 {-# INLINE transform #-}
 transform :: Monad m => Pipe m a b -> Fold m b c -> Fold m a c
-transform (Pipe pstep1 pstep2 pinitial) (Fold fstep finitial fextract) =
-    Fold step initial extract
+transform (Pipe pstep1 pstep2 pinitial) (Fold fstep finitial fextract fclean) =
+    Fold step initial extract clean
 
     where
 
@@ -375,6 +375,8 @@ transform (Pipe pstep1 pstep2 pinitial) (Fold fstep finitial fextract) =
             go acc r
 
     extract (Tuple' _ fs) = fextract fs
+
+    clean (Tuple' _ fs) = fclean fs
 
 ------------------------------------------------------------------------------
 -- Utilities
@@ -1042,8 +1044,8 @@ splitAt n fld = splitWith (,) (takeLE n fld)
 -- /Internal/
 {-# INLINE sliceSepBy #-}
 sliceSepBy :: Monad m => (a -> Bool) -> Fold m a b -> Fold m a b
-sliceSepBy predicate (Fold fstep finitial fextract) =
-    Fold step initial fextract
+sliceSepBy predicate (Fold fstep finitial fextract fcleanup) =
+    Fold step initial fextract fcleanup
 
     where
 
@@ -1052,7 +1054,7 @@ sliceSepBy predicate (Fold fstep finitial fextract) =
     step s a =
         if not (predicate a)
         then fstep s a
-        else Done <$> fextract s
+        else Done <$> finalExtract fextract fcleanup s
 
 -- | Like 'sliceSepBy' but terminates a parse even before the separator
 -- is encountered if its size exceeds the specified maximum limit.
@@ -1103,8 +1105,8 @@ sliceSepByMax p n = sliceSepBy p . takeLE n
 --
 {-# INLINE sliceEndWith #-}
 sliceEndWith :: Monad m => (a -> Bool) -> Fold m a b -> Fold m a b
-sliceEndWith predicate (Fold fstep finitial fextract) =
-    Fold step initial fextract
+sliceEndWith predicate (Fold fstep finitial fextract fcleanup) =
+    Fold step initial fextract fcleanup
 
     where
 
@@ -1116,7 +1118,7 @@ sliceEndWith predicate (Fold fstep finitial fextract) =
         then return res
         else do
             case res of
-                Partial s1 -> Done <$> fextract s1
+                Partial s1 -> Done <$> finalExtract fextract fcleanup s1
                 Done b -> return $ Done b
 
 data SpanByState a bl fl fr
@@ -1137,10 +1139,14 @@ spanBy
     -> Fold m a b
     -> Fold m a c
     -> Fold m a (b, c)
-spanBy cmp (Fold stepL initialL extractL) (Fold stepR initialR extractR) =
-    Fold step initial extract
+spanBy cmp (Fold stepL initialL extractL _)
+           (Fold stepR initialR extractR _) =
+    Fold step initial extract clean
 
     where
+
+    -- XXX This combinator will be removed in the future.
+    clean = undefined
 
     initial = do
         resL <- initialL
@@ -1237,10 +1243,13 @@ span
     -> Fold m a b
     -> Fold m a c
     -> Fold m a (b, c)
-span p (Fold stepL initialL extractL) (Fold stepR initialR extractR) =
-    Fold step initial extract
+span p (Fold stepL initialL extractL _) (Fold stepR initialR extractR _) =
+    Fold step initial extract clean
 
     where
+
+    -- XXX This combinator will be removed in the future.
+    clean = undefined
 
     initial = do
         resL <- initialL
@@ -1332,10 +1341,13 @@ spanByRolling
     -> Fold m a b
     -> Fold m a c
     -> Fold m a (b, c)
-spanByRolling cmp (Fold stepL initialL extractL) (Fold stepR initialR extractR) =
-    Fold step initial extract
+spanByRolling cmp (Fold stepL initialL extractL _) (Fold stepR initialR extractR _) =
+    Fold step initial extract clean
 
     where
+
+    -- XXX This combinator will be removed in the future.
+    clean = undefined
 
     initial = do
         resL <- initialL
@@ -1523,8 +1535,9 @@ distribute = foldr (teeWith (:)) (yield [])
 {-# INLINE partitionByM #-}
 partitionByM :: Monad m
     => (a -> m (Either b c)) -> Fold m b x -> Fold m c y -> Fold m a (x, y)
-partitionByM f (Fold stepL beginL doneL) (Fold stepR beginR doneR) =
-    Fold step begin done
+partitionByM f (Fold stepL beginL doneL cleanL)
+               (Fold stepR beginR doneR cleanR) =
+    Fold step begin done clean
 
     where
 
@@ -1584,6 +1597,10 @@ partitionByM f (Fold stepL beginL doneL) (Fold stepR beginR doneR) =
     done (RunBoth sL sR) = (,) <$> doneL sL <*> doneR sR
     done (RunLeft sL bR) = (,bR) <$> doneL sL
     done (RunRight bL sR) = (bL,) <$> doneR sR
+
+    clean (RunBoth sL sR) = cleanL sL >> cleanR sR
+    clean (RunLeft sL _) = cleanL sL
+    clean (RunRight _ sR) = cleanR sR
 
 -- | Similar to 'partitionByM' but terminates when the first fold terminates.
 --
@@ -1721,17 +1738,18 @@ demuxDefaultWith :: (Monad m, Ord k)
     -> Map k (Fold m a' b)
     -> Fold m (k, a') c
     -> Fold m a (Map k b, c)
-demuxDefaultWith f kv (Fold dstep dinitial dextract) =
-    Fold step initial extract
+demuxDefaultWith f kv (Fold dstep dinitial dextract dclean) =
+    Fold step initial extract clean
 
     where
 
     initial = do
-        let runInit (Fold step1 initial1 done1) = do
+        let runInit (Fold step1 initial1 done1 clean1) = do
                 r <- initial1
                 return
                     $ case r of
-                          Partial _ -> Right' (Fold step1 (return r) done1)
+                          Partial _ ->
+                              Right' (Fold step1 (return r) done1 clean1)
                           Done b -> Left' b
 
         -- initialize folds in the kv map and separate the ones that are done
@@ -1755,14 +1773,15 @@ demuxDefaultWith f kv (Fold dstep dinitial dextract) =
                       else Done (doneMap, b)
 
     {-# INLINE runFold #-}
-    runFold fPartial fDone doneMap runMap (Fold step1 initial1 done1) k a1 = do
+    runFold fPartial fDone doneMap runMap
+                (Fold step1 initial1 done1 clean1) k a1 = do
         resi <- initial1
         case resi of
             Partial st -> do
                 res <- step1 st a1
                 return $ case res of
                     Partial s ->
-                        let fld = Fold step1 (return $ Partial s) done1
+                        let fld = Fold step1 (return $ Partial s) done1 clean1
                             runMap1 = Map.insert k fld runMap
                          in Partial $ fPartial doneMap runMap1
                     Done b -> do
@@ -1806,7 +1825,7 @@ demuxDefaultWith f kv (Fold dstep dinitial dextract) =
                   Partial s -> Partial $ DemuxOnlyDefault s doneMap
                   Done b -> Done (doneMap, b)
 
-    runExtract (Fold _ initial1 done1) = do
+    runExtract (Fold _ initial1 done1 _) = do
         res <- initial1
         case res of
             Partial s -> done1 s
@@ -1822,6 +1841,17 @@ demuxDefaultWith f kv (Fold dstep dinitial dextract) =
     extract (DemuxOnlyDefault dacc doneMap) = do
         b <- dextract dacc
         return (doneMap, b)
+
+    runClean (Fold _ initial1 _ clean1) = do
+        res <- initial1
+        case res of
+            Partial s -> clean1 s
+            Done _ -> return ()
+
+    clean (DemuxMapAndDefault dacc _ runMap) =
+        dclean dacc >> Prelude.mapM_ runClean runMap
+    clean (DemuxOnlyMap _ _ runMap) = Prelude.mapM_ runClean runMap
+    clean (DemuxOnlyDefault dacc _) = dclean dacc
 
 {-# INLINE demuxDefault #-}
 demuxDefault :: (Monad m, Ord k)
@@ -1851,11 +1881,12 @@ demuxDefault = demuxDefaultWith id
 --
 {-# INLINE classifyWith #-}
 classifyWith :: (Monad m, Ord k) => (a -> k) -> Fold m a b -> Fold m a (Map k b)
-classifyWith f (Fold step1 initial1 extract1) = mkAccumM step initial extract
+classifyWith f (Fold step1 initial1 extract1 clean1) =
+    Fold step initial extract clean
 
     where
 
-    initial = return Map.empty
+    initial = return $ Partial Map.empty
 
     step kv a =
         case Map.lookup k kv of
@@ -1865,21 +1896,23 @@ classifyWith f (Fold step1 initial1 extract1) = mkAccumM step initial extract
                       Partial s -> do
                         r <- step1 s a
                         return
+                            $ Partial
                             $ flip (Map.insert k) kv
                             $ case r of
                                   Partial s1 -> Left' s1
                                   Done b -> Right' b
-                      Done b -> return $ Map.insert k (Right' b) kv
+                      Done b -> return $ Partial $ Map.insert k (Right' b) kv
             Just x -> do
                 case x of
                     Left' s -> do
                         r <- step1 s a
                         return
+                            $ Partial
                             $ flip (Map.insert k) kv
                             $ case r of
                                   Partial s1 -> Left' s1
                                   Done b -> Right' b
-                    Right' _ -> return kv
+                    Right' _ -> return $ Partial kv
 
         where
 
@@ -1890,6 +1923,12 @@ classifyWith f (Fold step1 initial1 extract1) = mkAccumM step initial extract
             (\case
                  Left' s -> extract1 s
                  Right' b -> return b)
+
+    clean =
+        Prelude.mapM_
+            (\case
+                 Left' s -> clean1 s
+                 Right' _ -> return ())
 
 -- | Given an input stream of key value pairs and a fold for values, fold all
 -- the values belonging to each key.  Useful for map/reduce, bucketizing the
@@ -1923,8 +1962,8 @@ classify fld = classifyWith fst (map snd fld)
 {-# INLINE unzipWithM #-}
 unzipWithM :: Monad m
     => (a -> m (b,c)) -> Fold m b x -> Fold m c y -> Fold m a (x,y)
-unzipWithM f (Fold stepL beginL doneL) (Fold stepR beginR doneR) =
-    Fold step begin done
+unzipWithM f (Fold stepL beginL doneL cleanL) (Fold stepR beginR doneR cleanR) =
+    Fold step begin done clean
 
     where
 
@@ -1977,6 +2016,10 @@ unzipWithM f (Fold stepL beginL doneL) (Fold stepR beginR doneR) =
     done (RunBoth sL sR) = (,) <$> doneL sL <*> doneR sR
     done (RunLeft sL bR) = (,bR) <$> doneL sL
     done (RunRight bL sR) = (bL,) <$> doneR sR
+
+    clean (RunBoth sL sR) = cleanL sL >> cleanR sR
+    clean (RunLeft sL _) = cleanL sL
+    clean (RunRight _ sR) = cleanR sR
 
 -- | Similar to 'unzipWithM' but terminates when the first fold terminates.
 --

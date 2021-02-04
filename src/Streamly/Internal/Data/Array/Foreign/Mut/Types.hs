@@ -761,7 +761,7 @@ foldr f z arr = runIdentity $ D.foldr f z $ toStreamD arr
 {-# INLINE_NORMAL writeNAllocWith #-}
 writeNAllocWith :: forall m a. (MonadIO m, Storable a)
     => (Int -> IO (Array a)) -> Int -> Fold m a (Array a)
-writeNAllocWith alloc n = Fold step initial extract
+writeNAllocWith alloc n = FL.mkFoldM step initial extract
 
     where
 
@@ -821,7 +821,7 @@ data ArrayUnsafe a = ArrayUnsafe
 {-# INLINE_NORMAL writeNUnsafe #-}
 writeNUnsafe :: forall m a. (MonadIO m, Storable a)
     => Int -> Fold m a (Array a)
-writeNUnsafe n = Fold step initial extract
+writeNUnsafe n = FL.mkFoldM step initial extract
 
     where
 
