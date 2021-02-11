@@ -160,7 +160,7 @@ module Streamly.Internal.Data.Parser.ParserD
 where
 
 import Control.Exception (assert)
-import Control.Monad.Catch (MonadCatch, MonadThrow(..))
+import Control.Monad.Catch (MonadCatch, MonadThrow(..), catchAll)
 import Streamly.Internal.Data.Fold.Types (Fold(..))
 import Streamly.Internal.Data.Tuple.Strict (Tuple'(..))
 
@@ -814,18 +814,135 @@ lookAhead (Parser step1 initial1 _) = Parser step initial extract
 -------------------------------------------------------------------------------
 -- Interleaving
 -------------------------------------------------------------------------------
+
+data ParserTurn = Parser1 | Parser2
+
 --
 -- | See 'Streamly.Internal.Data.Parser.deintercalate'.
 --
--- /Unimplemented/
+-- /Internal/
 --
 {-# INLINE deintercalate #-}
 deintercalate ::
-    -- Monad m =>
+    MonadCatch m =>
        Fold m a y -> Parser m x a
     -> Fold m b z -> Parser m x b
     -> Parser m x (y, z)
-deintercalate = undefined
+deintercalate
+    (Fold fstep1 finitial1 fextract1)
+    (Parser pstep1 pinitial1 pextract1)
+    (Fold fstep2 finitial2 fextract2)
+    (Parser pstep2 pinitial2 pextract2) =
+
+    Parser step initial extract
+
+    where
+
+    initial = do
+        finit1 <- finitial1
+        pinit1 <- pinitial1
+        finit2 <- finitial2
+        pinit2 <- pinitial2
+        return (finit1, pinit1, finit2, pinit2, Parser1, 0::Int)
+
+    step (fs1, ps1, fs2, ps2, currentParser, numBuffered) a =
+        case currentParser of
+            Parser1 -> do
+                st <- pstep1 ps1 a
+                case st of
+                    Partial n ps1new ->
+                        return $ Partial n (fs1, ps1new, fs2, ps2,
+                            currentParser, 0)
+                    Continue n ps1new -> do
+                        let
+                            newNumBuffered =
+                                if n==0
+                                then numBuffered + 1
+                                else numBuffered - n
+                        return $ Continue n (fs1, ps1new, fs2, ps2,
+                            currentParser, newNumBuffered)
+                    Done n result -> do
+                        res1 <- fstep1 fs1 result
+                        pinit1 <- pinitial1
+                        pinit2 <- pinitial2
+                        case res1 of
+                            FL.Partial fs1new ->
+                                return $ Partial n (fs1new, pinit1, fs2, pinit2,
+                                    Parser2, numBuffered)
+                            FL.Done result1 -> do
+                                result2 <- fextract2 fs2
+                                return $ Done numBuffered (result1, result2)
+                    Error _ -> do
+                        -- input definitively rejected by the first parser
+                        pinit1 <- pinitial1
+                        pinit2 <- pinitial2
+                        return $ Partial numBuffered (fs1, pinit1, fs2, pinit2,
+                            Parser2, numBuffered-1)
+                        -- return $ Done numBuffered (result1, result2)
+
+            Parser2 -> do
+                st <- pstep2 ps2 a
+                case st of
+                    Partial n ps2new ->
+                        return $ Partial n (fs1, ps1, fs2, ps2new,
+                            currentParser, 0)
+                    Continue n ps2new -> do
+                        let
+                            newNumBuffered =
+                                if n==0
+                                then numBuffered + 1
+                                else numBuffered - n
+                        return $ Continue n (fs1, ps1, fs2, ps2new,
+                            currentParser, newNumBuffered)
+                    Done n result -> do
+                        res2 <- fstep2 fs2 result
+                        pinit1 <- pinitial1
+                        pinit2 <- pinitial2
+                        case res2 of
+                            FL.Partial fs2new ->
+                                return $ Partial n (fs1, pinit1, fs2new, pinit2,
+                                    Parser1, numBuffered)
+                            FL.Done result2 -> do
+                                result1 <- fextract1 fs1
+                                return $ Done numBuffered (result1, result2)
+                    Error _ -> do
+                        -- input definitively rejected by the second parser
+                        pinit1 <- pinitial1
+                        pinit2 <- pinitial2
+                        return $ Partial numBuffered (fs1, pinit1, fs2, pinit2,
+                            Parser2, numBuffered-1)
+                        -- return $ Done numBuffered (result1, result2)
+
+
+
+    extract (fs1, ps1, fs2, ps2, currentParser, _) =
+        case currentParser of
+            Parser1 -> do
+                maybeRes <- catchAll
+                    (fmap Just $ pextract1 ps1)
+                    (\_ -> return Nothing)
+                result1 <- case maybeRes of
+                            Nothing -> fextract1 fs1
+                            Just res -> do
+                                fs1new <- fstep1 fs1 res
+                                case fs1new of
+                                    FL.Done result1' -> return result1'
+                                    FL.Partial fs1new' -> fextract1 fs1new'
+                result2 <- fextract2 fs2
+                return (result1, result2)
+            Parser2 -> do
+                maybeRes <- catchAll
+                    (fmap Just $ pextract2 ps2)
+                    (\_ -> return Nothing)
+                result2 <- case maybeRes of
+                            Nothing -> fextract2 fs2
+                            Just res -> do
+                                fs2new <- fstep2 fs2 res
+                                case fs2new of
+                                    FL.Done result2' -> return result2'
+                                    FL.Partial fs2new' -> fextract2 fs2new'
+                result1 <- fextract1 fs1
+                return (result1, result2)
 
 -------------------------------------------------------------------------------
 -- Sequential Collection

@@ -60,6 +60,11 @@ benchIOSink value name f =
 -------------------------------------------------------------------------------
 -- Parsers
 -------------------------------------------------------------------------------
+{-# INLINE deintercalate #-}
+deintercalate :: MonadCatch m => Int -> SerialT m Int -> m ((), ())
+deintercalate value =
+    IP.parse (PR.deintercalate FL.drain (PR.satisfy (>= value))
+        FL.drain (PR.satisfy (< value)))
 
 {-# INLINE takeBetween #-}
 takeBetween :: MonadCatch m => Int -> SerialT m a -> m ()
@@ -289,6 +294,7 @@ moduleName = "Data.Parser"
 o_1_space_serial :: Int -> [Benchmark]
 o_1_space_serial value =
     [ benchIOSink value "takeBetween" $ takeBetween value
+    , benchIOSink value "deintercalate" $ deintercalate value
     , benchIOSink value "takeEQ" $ takeEQ value
     , benchIOSink value "takeWhile" $ takeWhile value
     , benchIOSink value "drainWhile" $ drainWhile value

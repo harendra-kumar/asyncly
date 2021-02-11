@@ -852,15 +852,21 @@ lookAhead p = K.toParserK $ D.lookAhead $ K.fromParserK p
 --
 -- This undoes a "gintercalate" of two streams.
 --
--- /Unimplemented/
+-- /Internal/
 --
 {-# INLINE deintercalate #-}
 deintercalate ::
-    -- Monad m =>
+    MonadCatch m =>
        Fold m a y -> Parser m x a
     -> Fold m b z -> Parser m x b
     -> Parser m x (y, z)
-deintercalate = undefined
+deintercalate fld1 prsr1 fld2 prsr2 =
+    K.toParserK $
+        D.deintercalate
+        fld1
+        (K.fromParserK prsr1)
+        fld2
+        (K.fromParserK prsr2)
 
 -------------------------------------------------------------------------------
 -- Sequential Collection

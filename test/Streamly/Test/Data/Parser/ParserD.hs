@@ -178,6 +178,32 @@ takeBetween =
                             else property False
                         Left _ -> property (m > n || list_length < m)
 
+-- deintercalate :: Property
+-- deintercalate =
+--     forAll (chooseInt (min_value, max_value)) $ \n ->
+--         forAll (listOf (chooseInt (min_value, max_value))) $ \ls ->
+--             case S.parseD (P.deintercalate FL.drain (P.satisfy odd) FL.drain
+--                 (P.satisfy even)) (S.fromList ls)  of
+--                 Right parsed_list -> property (length ls == length parsed_list)
+--                 Left _ -> property False
+
+deintercalate :: Property
+deintercalate =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        case S.parseD prsr (S.fromList ls) of
+            Right parsed_list_tuple ->
+                parsed_list_tuple == List.partition (== 0) ls
+            Left _ -> False
+
+        where
+            prsr = P.deintercalate concatFold prsr_1 concatFold prsr_2
+            prsr_1 = P.takeWhile (== 0) FL.toList
+            prsr_2 = P.takeWhile (== 1) FL.toList
+            concatFold = FL.Fold
+                            (\concatList curr_list ->
+                                return $ FL.Partial $ concatList ++ curr_list)
+                            (return []) return
+
 take :: Property
 take =
     forAll (chooseInt (min_value, max_value)) $ \n ->
@@ -704,6 +730,7 @@ main =
                 takeBetweenPass
         prop "P.takeBetween m n = Prelude.take when len >= m and len <= n and\
                 \fail otherwise" takeBetween
+        prop "P.deintercalate test" deintercalate
         prop "P.take = Prelude.take" Main.take
         prop "P.takeEQ = Prelude.take when len >= n" takeEQPass
         prop "P.takeEQ = Prelude.take when len >= n and fail otherwise" Main.takeEQ

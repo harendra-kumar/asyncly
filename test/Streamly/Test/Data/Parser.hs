@@ -191,6 +191,15 @@ takeBetween =
                         Left _ -> property (m > n || list_length < m)
 
 
+-- deintercalate :: Property
+-- deintercalate =
+--      forAll (chooseInt (min_value, max_value)) $ \n ->
+--         forAll (listOf (chooseInt (min_value, max_value))) $ \ls ->
+--             case S.parse (P.deintercalate FL.drain (P.satisfy odd) FL.drain
+--                 (P.satisfy even)) (S.fromList ls)  of
+--                 Right parsed_list -> property (length ls == length parsed_list)
+--                 Left _ -> property False
+
 takeEQPass :: Property
 takeEQPass =
     forAll (chooseInt (min_value, max_value)) $ \n ->
@@ -463,17 +472,22 @@ wordBy =
 --         Right _ -> False
 --         Left _ -> True)
 
--- deintercalate :: Property
--- deintercalate =
---     forAll (listOf (chooseInt (0, 1))) $ \ls ->
---         case S.parse (P.deintercalate concatFold prsr_1 concatFold prsr_2) (S.fromList ls) of
---             Right parsed_list_tuple -> parsed_list_tuple == (partition (== 0) ls)
---             Left _ -> False
+deintercalate :: Property
+deintercalate =
+    forAll (listOf (chooseInt (0, 1))) $ \ls ->
+        case S.parse prsr (S.fromList ls) of
+            Right parsed_list_tuple ->
+                parsed_list_tuple == List.partition (== 0) ls
+            Left _ -> False
 
---         where
---             prsr_1 = (P.takeWhile (== 0) FL.toList)
---             prsr_2 = (P.takeWhile (== 1) FL.toList)
---             concatFold = FL.Fold (\concatList curr_list -> return $ concatList ++ curr_list) (return []) return
+        where
+            prsr = P.deintercalate concatFold prsr_1 concatFold prsr_2
+            prsr_1 = P.takeWhile (== 0) FL.toList
+            prsr_2 = P.takeWhile (== 1) FL.toList
+            concatFold = FL.Fold
+                            (\concatList curr_list ->
+                                return $ FL.Partial $ concatList ++ curr_list)
+                            (return []) return
 
 -- shortestPass :: Property
 -- shortestPass =
@@ -705,7 +719,7 @@ main =
             takeBetweenPass
         prop ("P.takeBetween = Prelude.take when len >= m and len <= n and fail"
               ++ "otherwise fail") Main.takeBetween
-
+        prop "P.deintercalate test" deintercalate
         prop "P.takeEQ = Prelude.take when len >= n" takeEQPass
         prop "P.takeEQ = Prelude.take when len >= n and fail otherwise"
             Main.takeEQ
