@@ -1024,7 +1024,7 @@ dropWhileM p m = fromStreamD $ D.dropWhileM p $ toStreamD m
 -- /Pre-release/
 --
 {-# INLINE dropInterval #-}
-dropInterval ::(MonadIO m, IsStream t, TimeUnit64 d) => d -> t m a -> t m a
+dropInterval ::(MonadAsync m, IsStream t, TimeUnit64 d) => d -> t m a -> t m a
 dropInterval d = fromStreamD . D.dropByTime d . toStreamD
 
 -- | Drop @n@ elements at the end of the stream.
