@@ -26,22 +26,22 @@ import qualified Streamly.Prelude as S
 import qualified Streamly.Internal.Data.SmallArray as A
 type Array = A.SmallArray
 #elif defined(TEST_ARRAY)
-import Data.Word(Word8)
+-- import Data.Word(Word8)
 
 import qualified Streamly.Internal.Data.Array.Foreign as A
-import qualified Streamly.Internal.Data.Array.Foreign.Types as A
-import qualified Streamly.Internal.Data.Stream.IsStream as IP
-import qualified Streamly.Internal.Data.Array.Stream.Foreign as AS
+-- import qualified Streamly.Internal.Data.Array.Foreign.Types as A
+-- import qualified Streamly.Internal.Data.Stream.IsStream as IP
+-- import qualified Streamly.Internal.Data.Array.Stream.Foreign as AS
 type Array = A.Array
 #elif defined(DATA_ARRAY_PRIM_PINNED)
 import qualified Streamly.Internal.Data.Array.Prim.Pinned as A
-import qualified Streamly.Internal.Data.Array.Prim.Pinned.Types as A
-import qualified Streamly.Internal.Data.Stream.IsStream as IP
+-- import qualified Streamly.Internal.Data.Array.Prim.Pinned.Types as A
+-- import qualified Streamly.Internal.Data.Stream.IsStream as IP
 type Array = A.Array
 #elif defined(DATA_ARRAY_PRIM)
 import qualified Streamly.Internal.Data.Array.Prim as A
-import qualified Streamly.Internal.Data.Array.Prim.Types as A
-import qualified Streamly.Internal.Data.Stream.IsStream as IP
+-- import qualified Streamly.Internal.Data.Array.Prim.Types as A
+-- import qualified Streamly.Internal.Data.Stream.IsStream as IP
 type Array = A.Array
 #else
 import qualified Streamly.Internal.Data.Array as A
@@ -155,7 +155,7 @@ testFromList =
 #if defined(TEST_ARRAY) ||\
     defined(DATA_ARRAY_PRIM) ||\
     defined(DATA_ARRAY_PRIM_PINNED)
-
+{-
 testArraysOf :: Property
 testArraysOf =
     forAll (choose (0, maxArrLen)) $ \len ->
@@ -169,7 +169,7 @@ testArraysOf =
                 assert (xs == list)
   where
     arraysOf n = IP.chunksOf n (A.writeNUnsafe n)
-
+-}
 #endif
 
 #ifdef TEST_ARRAY
@@ -198,6 +198,7 @@ testLastN_LN len n = do
 
 -- Instead of hard coding 10000 here we can have maxStreamLength for operations
 -- that use stream of arrays.
+{-
 concatArrayW8 :: Property
 concatArrayW8 =
     forAll (vectorOf 10000 (arbitrary :: Gen Word8))
@@ -205,7 +206,7 @@ concatArrayW8 =
               let w8ArrList = A.fromList . (: []) <$> w8List
               f2 <- S.toList $ AS.concat $ S.fromList w8ArrList
               w8List `shouldBe` f2
-
+-}
 #endif
 
 main :: IO ()
@@ -233,11 +234,11 @@ main =
 #if defined(TEST_ARRAY) ||\
     defined(DATA_ARRAY_PRIM) ||\
     defined(DATA_ARRAY_PRIM_PINNED)
-            prop "arraysOf concats to original" testArraysOf
+            -- prop "arraysOf concats to original" testArraysOf
 #endif
 
 #ifdef TEST_ARRAY
-            prop "AS.concat . (A.fromList . (:[]) <$>) === id" $ concatArrayW8
+            -- prop "AS.concat . (A.fromList . (:[]) <$>) === id" $ concatArrayW8
         describe "Fold" $ do
             prop "lastN : 0 <= n <= len" $ testLastN
             describe "lastN boundary conditions" $ do
