@@ -307,12 +307,6 @@ takeWhileMTrue value n = composeN n $ S.takeWhileM (return . (<= (value + 1)))
 takeInterval :: NanoSecond64 -> Int -> SerialT IO Int -> IO ()
 takeInterval i n = composeN n (Internal.takeInterval i)
 
-#ifdef INSPECTION
--- inspect $ hasNoType 'takeInterval ''SPEC
-inspect $ hasNoTypeClasses 'takeInterval
--- inspect $ 'takeInterval `hasNoType` ''D.Step
-#endif
-
 {-# INLINE dropOne #-}
 dropOne :: MonadIO m => Int -> SerialT m Int -> m ()
 dropOne n = composeN n $ S.drop 1
