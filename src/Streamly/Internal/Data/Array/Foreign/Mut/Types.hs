@@ -147,6 +147,7 @@ import qualified Data.Foldable as F
 import qualified GHC.Exts as Exts
 import qualified Streamly.Internal.Data.Fold.Types as FL
 import qualified Streamly.Internal.Data.Producer as Producer
+import qualified Streamly.Internal.Data.Producer.Type as Producer
 import qualified Streamly.Internal.Data.Stream.StreamD.Type as D
 import qualified Streamly.Internal.Data.Stream.StreamK.Type as K
 import qualified Streamly.Internal.Foreign.Malloc as Malloc
@@ -514,7 +515,7 @@ producer = Producer step inject extract
     {-# INLINE_LATE step #-}
     step (ReadUState fp@(ForeignPtr end _) p) | p == Ptr end =
         let x = unsafeInlineIO $ touchForeignPtr fp
-        in x `seq` return D.Stop
+        in x `seq` return (Producer.Stop Nothing)
     step (ReadUState fp p) = do
             -- unsafeInlineIO allows us to run this in Identity monad for pure
             -- toList/foldr case which makes them much faster due to not
@@ -523,11 +524,11 @@ producer = Producer step inject extract
             -- This should be safe as the array contents are guaranteed to be
             -- evaluated/written to before we peek at them.
             let !x = unsafeInlineIO $ peek p
-            return $ D.Yield x
+            return $ Producer.Yield x
                 (ReadUState fp (p `plusPtr` sizeOf (undefined :: a)))
 
     extract (ReadUState (ForeignPtr end contents) (Ptr p)) =
-        return $ Array (ForeignPtr p contents) (Ptr end) (Ptr end)
+        return $ Just $ Array (ForeignPtr p contents) (Ptr end) (Ptr end)
 
 -- | Unfold an array into a stream.
 --

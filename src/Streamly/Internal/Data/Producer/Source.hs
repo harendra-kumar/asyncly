@@ -38,8 +38,7 @@ import Control.Monad.Catch (MonadThrow, throwM)
 import GHC.Exts (SpecConstrAnnotation(..))
 import GHC.Types (SPEC(..))
 import Streamly.Internal.Data.Parser.ParserD (ParseError(..), Step(..))
-import Streamly.Internal.Data.Producer.Type (Producer(..))
-import Streamly.Internal.Data.Stream.StreamD.Step (Step(..))
+import Streamly.Internal.Data.Producer.Type (Producer(..), Step(..))
 
 import qualified Streamly.Internal.Data.Parser.ParserD as ParserD
 import qualified Streamly.Internal.Data.Parser.ParserK.Types as ParserK
@@ -90,16 +89,16 @@ producer (Producer step1 inject1 extract1) = Producer step inject extract
         return $ case r of
             Yield x s1 -> Yield x (Left s1)
             Skip s1 -> Skip (Left s1)
-            Stop -> Stop
-    step (Right ([], Nothing)) = return Stop
+            Stop res -> Stop $ fmap (Source [] . Just) res
+    step (Right ([], Nothing)) = return $ Stop Nothing
     step (Right ([], Just _)) = error "Bug: unreachable"
     step (Right (x:[], Just a)) = do
         s <- inject1 a
         return $ Yield x (Left s)
     step (Right (x:xs, a)) = return $ Yield x (Right (xs, a))
 
-    extract (Left s) = Source [] . Just <$> extract1 s
-    extract (Right (xs, a)) = return $ Source xs a
+    extract (Left s) = fmap (Source [] . Just) <$> extract1 s
+    extract (Right (xs, a)) = return $ Just $ Source xs a
 
 -------------------------------------------------------------------------------
 -- Parsing
@@ -159,12 +158,18 @@ parseD
                         let src0 = Prelude.take n (x:getList buf)
                             src  = Prelude.reverse src0
                         s1 <- uextract s
-                        return (b, unread src s1)
+                        let s2 = case s1 of
+                                Nothing -> source Nothing
+                                Just v -> v
+                        return (b, unread src s2)
                     Error err -> throwM $ ParseError err
             Skip s -> go SPEC s buf pst
-            Stop   -> do
+            Stop res -> do
                 b <- extract pst
-                return (b, unread (reverse $ getList buf) (source Nothing))
+                let src = case res of
+                        Nothing -> source Nothing
+                        Just v -> v
+                return (b, unread (reverse $ getList buf) src)
 
     gobuf !_ s buf (List []) !pst = go SPEC s buf pst
     gobuf !_ s buf (List (x:xs)) !pst = do
@@ -189,7 +194,10 @@ parseD
                 let src0 = Prelude.take n (x:getList buf)
                     src  = Prelude.reverse src0
                 s1 <- uextract s
-                return (b, unread src s1)
+                let s2 = case s1 of
+                        Nothing -> source Nothing
+                        Just v -> v
+                return (b, unread src s2)
             Error err -> throwM $ ParseError err
 
 -- | Parse a buffered source using a parser, returning the parsed value and the
@@ -214,14 +222,14 @@ parseManyD :: MonadThrow m =>
        ParserD.Parser m a b
     -> Producer m (Source x a) a
     -> Producer m (Source x a) b
-parseManyD parser reader = Producer step return return
+parseManyD parser reader = Producer step return (return . Just)
 
     where
 
     {-# INLINE_LATE step #-}
     step src = do
         if isEmpty src
-        then return Stop
+        then return $ Stop $ Just src
         else do
             (b, s1) <- parseD parser reader src
             return $ Yield b s1

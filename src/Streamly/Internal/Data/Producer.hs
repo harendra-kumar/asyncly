@@ -44,10 +44,11 @@ where
 
 #include "inline.hs"
 
-import Streamly.Internal.Data.Stream.StreamD.Step (Step(..))
 import Streamly.Internal.Data.Stream.StreamD.Type (Stream(..))
 import Streamly.Internal.Data.SVar (defState)
 import Streamly.Internal.Data.Unfold.Types (Unfold(..))
+
+import qualified Streamly.Internal.Data.Stream.StreamD.Step as D
 
 import Streamly.Internal.Data.Producer.Type
 import Prelude hiding (concat)
@@ -63,8 +64,17 @@ import Prelude hiding (concat)
 --
 -- /Pre-release/
 {-# INLINE simplify #-}
-simplify :: Producer m a b -> Unfold m a b
-simplify (Producer step inject _) = Unfold step inject
+simplify :: Monad m => Producer m a b -> Unfold m a b
+simplify (Producer step inject _) = Unfold step1 inject
+
+    where
+
+    step1 st = do
+        res <- step st
+        return $ case res of
+            Yield x s -> D.Yield x s
+            Skip s -> D.Skip s
+            Stop _ -> D.Stop
 
 -------------------------------------------------------------------------------
 -- Unfolds
@@ -75,7 +85,7 @@ simplify (Producer step inject _) = Unfold step inject
 -- /Pre-release/
 {-# INLINE_NORMAL fromStreamD #-}
 fromStreamD :: Monad m => Producer m (Stream m a) a
-fromStreamD = Producer step return return
+fromStreamD = Producer step return (return . Just)
 
     where
 
@@ -83,6 +93,6 @@ fromStreamD = Producer step return return
     step (UnStream step1 state1) = do
         r <- step1 defState state1
         return $ case r of
-            Yield x s -> Yield x (Stream step1 s)
-            Skip s    -> Skip (Stream step1 s)
-            Stop      -> Stop
+            D.Yield x s -> Yield x (Stream step1 s)
+            D.Skip s    -> Skip (Stream step1 s)
+            D.Stop      -> Stop Nothing
