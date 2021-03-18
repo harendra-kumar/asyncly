@@ -427,20 +427,20 @@ checkTakeDropTime (mt0, mt1) = do
                     return r
 
 #ifdef DEVBUILD
-testTakeByTime :: IO Bool
-testTakeByTime = do
+testTakeInterval :: IO Bool
+testTakeInterval = do
     r <-
-          S.fold ((,) <$> FL.head <*> FL.last)
-        $ IS.takeByTime takeDropTime
+          S.fold (FL.tee FL.head FL.last)
+        $ IS.takeInterval 1 takeDropTime
         $ S.repeatM (threadDelay 1000 >> getTime Monotonic)
     checkTakeDropTime r
 
-testDropByTime :: IO Bool
-testDropByTime = do
+testDropInterval :: IO Bool
+testDropInterval = do
     t0 <- getTime Monotonic
     mt1 <-
           S.head
-        $ IS.dropByTime takeDropTime
+        $ IS.dropInterval 1 takeDropTime
         $ S.repeatM (threadDelay 1000 >> getTime Monotonic)
     checkTakeDropTime (Just t0, mt1)
 #endif
@@ -630,8 +630,8 @@ main = hspec
 
 #ifdef DEVBUILD
         describe "Filtering" $ do
-            it "takeByTime" (testTakeByTime `shouldReturn` True)
-            it "dropByTime" (testDropByTime `shouldReturn` True)
+            it "takeInterval" (testTakeInterval `shouldReturn` True)
+            it "dropInterval" (testDropInterval `shouldReturn` True)
 #endif
 
     describe "Stream group and split operations" $ do
