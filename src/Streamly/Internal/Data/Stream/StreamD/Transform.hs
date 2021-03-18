@@ -79,7 +79,7 @@ module Streamly.Internal.Data.Stream.StreamD.Transform
     , takeWhile
     , takeWhileM
     , drop
-    , dropByTime
+    , dropInterval
     , dropWhile
     , dropWhileM
 
@@ -793,10 +793,10 @@ deleteBy eq x (Stream step state) = Stream step' (state, False)
 -- Trimming
 ------------------------------------------------------------------------------
 
-{-# INLINE_NORMAL dropByTime #-}
-dropByTime ::
+{-# INLINE_NORMAL dropInterval #-}
+dropInterval ::
        (MonadAsync m, TimeUnit64 t) => Double -> t -> Stream m a -> Stream m a
-dropByTime g duration =
+dropInterval g duration =
     map snd
         . dropWhile (\(t, _) -> t <= duration64)
         . Nesting.zipWith (,) (relTimesWith g)

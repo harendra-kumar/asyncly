@@ -1036,7 +1036,7 @@ dropWhileM p m = fromStreamD $ D.dropWhileM p $ toStreamD m
 {-# INLINE dropInterval #-}
 dropInterval ::
        (MonadAsync m, IsStream t, TimeUnit64 d) => Double -> d -> t m a -> t m a
-dropInterval g d = fromStreamD . D.dropByTime g d . toStreamD
+dropInterval g d = fromStreamD . D.dropInterval g d . toStreamD
 
 -- | Drop @n@ elements at the end of the stream.
 --
