@@ -794,15 +794,16 @@ deleteBy eq x (Stream step state) = Stream step' (state, False)
 ------------------------------------------------------------------------------
 
 {-# INLINE_NORMAL dropByTime #-}
-dropByTime :: (MonadAsync m, TimeUnit64 t) => t -> Stream m a -> Stream m a
-dropByTime duration =
+dropByTime ::
+       (MonadAsync m, TimeUnit64 t) => Double -> t -> Stream m a -> Stream m a
+dropByTime g duration =
     map snd
         . dropWhile (\(t, _) -> t <= duration64)
-        . Nesting.zipWith (,) relTimes
+        . Nesting.zipWith (,) (relTimesWith g)
 
     where
 
-    relTimes = map snd (Generate.times 0.01)
+    relTimesWith g_ = map snd (Generate.times g_)
     duration64 = toRelTime64 duration
 
 -- Adapted from the vector package
