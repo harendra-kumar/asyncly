@@ -235,6 +235,7 @@ import Streamly.Internal.Data.Stream.IsStream.Common
     , takeWhile
     , interjectSuffix
     , intersperseM
+    , relTimesWith
     )
 import Streamly.Internal.Data.Stream.Prelude (fromStreamS, toStreamS)
 import Streamly.Internal.Data.Stream.Serial (SerialT)
@@ -245,7 +246,6 @@ import Streamly.Internal.Data.Time.Units
     (TimeUnit64, AbsTime, RelTime64, toRelTime64)
 
 import qualified Streamly.Internal.Data.Fold as FL
-import qualified Streamly.Internal.Data.Stream.IsStream.Generate as Generate
 import qualified Streamly.Internal.Data.Stream.Parallel as Par
 import qualified Streamly.Internal.Data.Stream.Prelude as P
 import qualified Streamly.Internal.Data.Stream.Serial as Serial
@@ -976,11 +976,11 @@ takeWhileAround :: -- (IsStream t, Monad m) =>
     (a -> Bool) -> t m a -> t m a
 takeWhileAround = undefined -- fromStreamD $ D.takeWhileAround n $ toStreamD m
 
--- | @takeInterval duration@ yields stream elements upto specified time
--- @duration@. The duration starts when the stream is evaluated for the first
--- time, before the first element is yielded. The time duration is checked
--- before generating each element, if the duration has expired the stream
--- stops.
+-- | @takeInterval granularity duration@ yields stream elements upto specified
+-- time @duration@ measured on a clock with granularity @granularity@. The
+-- duration starts when the stream is evaluated for the first time, before the
+-- first element is yielded. The time duration is checked before generating each
+-- element, if the duration has expired the stream stops.
 --
 -- The total time taken in executing the stream is guaranteed to be /at least/
 -- @duration@, however, because the duration is checked before generating an
@@ -995,14 +995,14 @@ takeWhileAround = undefined -- fromStreamD $ D.takeWhileAround n $ toStreamD m
 {-# INLINE takeInterval #-}
 takeInterval ::
        (MonadAsync m, IsStream t, TimeUnit64 d, Functor (t m))
-    => d -> t m a -> t m a
-takeInterval duration = catMaybes . Par.parallelMin timeStream . fmap Just
+    => Double -> d -> t m a -> t m a
+takeInterval g duration = catMaybes . Par.parallelMin timeStream . fmap Just
 
     where
 
     duration64 = toRelTime64 duration
     timeStream =
-        fmap (const Nothing) $ takeWhile (< duration64) Generate.relTimes
+        fmap (const Nothing) $ takeWhile (< duration64) (relTimesWith g)
 
 -- | Drop elements in the stream as long as the predicate succeeds and then
 -- take the rest of the stream.

@@ -304,8 +304,8 @@ takeWhileMTrue :: MonadIO m => Int -> Int -> SerialT m Int -> m ()
 takeWhileMTrue value n = composeN n $ S.takeWhileM (return . (<= (value + 1)))
 
 {-# INLINE takeInterval #-}
-takeInterval :: NanoSecond64 -> Int -> SerialT IO Int -> IO ()
-takeInterval i n = composeN n (Internal.takeInterval i)
+takeInterval :: Double -> NanoSecond64 -> Int -> SerialT IO Int -> IO ()
+takeInterval g i n = composeN n (Internal.takeInterval g i)
 
 {-# INLINE dropOne #-}
 dropOne :: MonadIO m => Int -> SerialT m Int -> m ()
@@ -394,7 +394,7 @@ o_1_space_filtering value =
         , benchIOSink
               value
               "takeInterval-all"
-              (takeInterval (NanoSecond64 maxBound) 1)
+              (takeInterval 1 (NanoSecond64 maxBound) 1)
         , benchIOSink value "takeWhile-true" (takeWhileTrue value 1)
      -- , benchIOSink value "takeWhileM-true" (_takeWhileMTrue value 1)
         , benchIOSink value "drop-one" (dropOne 1)
