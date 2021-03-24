@@ -304,14 +304,8 @@ takeWhileMTrue :: MonadIO m => Int -> Int -> SerialT m Int -> m ()
 takeWhileMTrue value n = composeN n $ S.takeWhileM (return . (<= (value + 1)))
 
 {-# INLINE takeInterval #-}
-takeInterval :: NanoSecond64 -> Int -> SerialT IO Int -> IO ()
-takeInterval i n = composeN n (Internal.takeInterval i)
-
-#ifdef INSPECTION
--- inspect $ hasNoType 'takeInterval ''SPEC
-inspect $ hasNoTypeClasses 'takeInterval
--- inspect $ 'takeInterval `hasNoType` ''D.Step
-#endif
+takeInterval :: Double -> NanoSecond64 -> Int -> SerialT IO Int -> IO ()
+takeInterval g i n = composeN n (Internal.takeInterval g i)
 
 {-# INLINE dropOne #-}
 dropOne :: MonadIO m => Int -> SerialT m Int -> m ()
@@ -339,8 +333,8 @@ _intervalsOfSum :: MonadAsync m => Double -> Int -> SerialT m Int -> m ()
 _intervalsOfSum i n = composeN n (S.intervalsOf i FL.sum)
 
 {-# INLINE dropInterval #-}
-dropInterval :: NanoSecond64 -> Int -> SerialT IO Int -> IO ()
-dropInterval i n = composeN n (Internal.dropInterval i)
+dropInterval :: Double -> NanoSecond64 -> Int -> SerialT IO Int -> IO ()
+dropInterval g i n = composeN n (Internal.dropInterval g i)
 
 #ifdef INSPECTION
 inspect $ hasNoTypeClasses 'dropInterval
@@ -400,7 +394,7 @@ o_1_space_filtering value =
         , benchIOSink
               value
               "takeInterval-all"
-              (takeInterval (NanoSecond64 maxBound) 1)
+              (takeInterval 1 (NanoSecond64 maxBound) 1)
         , benchIOSink value "takeWhile-true" (takeWhileTrue value 1)
      -- , benchIOSink value "takeWhileM-true" (_takeWhileMTrue value 1)
         , benchIOSink value "drop-one" (dropOne 1)
@@ -408,7 +402,7 @@ o_1_space_filtering value =
         , benchIOSink
               value
               "dropInterval-all"
-              (dropInterval (NanoSecond64 maxBound) 1)
+              (dropInterval 1 (NanoSecond64 maxBound) 1)
         , benchIOSink value "dropWhile-true" (dropWhileTrue value 1)
      -- , benchIOSink value "dropWhileM-true" (_dropWhileMTrue value 1)
         , benchIOSink
