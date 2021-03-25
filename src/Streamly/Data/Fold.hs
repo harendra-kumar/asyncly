@@ -6,16 +6,15 @@
 -- Stability   : experimental
 -- Portability : GHC
 --
--- A 'Fold' is a sink or a consumer of a stream of values.  The 'Fold' type
--- consists of an accumulator and an effectful action that absorbs a value into
--- the accumulator.
+-- A 'Fold' is an abstraction that can act as a consumer for a stream of values.
+--
+-- A fold driver e.g. 'Streamly.Prelude.fold' pushes values from a stream to the
+-- 'Fold' one at a time, reducing the stream to a single value.
 --
 -- >>> import qualified Streamly.Data.Fold as Fold
 -- >>> import qualified Streamly.Prelude as Stream
 --
--- For example, a 'sum' Fold represents adding the input to the accumulated
--- sum.  A fold driver e.g. 'Streamly.Prelude.fold' pushes values from a stream
--- to the 'Fold' one at a time, reducing the stream to a single value.
+-- For example, a 'sum' Fold represents adding the input to the accumulated sum.
 --
 -- >>> Stream.fold Fold.sum $ Stream.fromList [1..100]
 -- 5050
@@ -28,15 +27,14 @@
 -- >>> Data.List.foldl' (+) 0 [1..100]
 -- 5050
 --
--- 'Fold's have an early termination capability e.g. the 'head' fold would
--- terminate on an infinite stream:
+-- 'Fold's are non-greedy consumers and have the have the capability to
+-- terminate early. Being non-greedy, they only consume the part of the input
+-- stream that is required.
+--
+-- For e.g. the 'head' fold consumes only 1 element in the input stream and
+-- terminates.
 --
 -- >>> Stream.fold Fold.head $ Stream.fromList [1..]
--- Just 1
---
--- The above example is similar to the following right fold:
---
--- >>> Prelude.foldr (\x _ -> Just x) Nothing [1..]
 -- Just 1
 --
 -- 'Fold's can be combined together using combinators. For example, to create a
@@ -45,6 +43,9 @@
 -- >>> sumTwo = Fold.take 2 Fold.sum
 -- >>> Stream.fold sumTwo $ Stream.fromList [1..100]
 -- 3
+--
+-- In the above example, since the fold needs only 2 elements from the input
+-- stream, it only consumes two.
 --
 -- Folds can be combined to run in parallel on the same input. For example, to
 -- compute the average of numbers in a stream without going through the stream
@@ -65,13 +66,16 @@
 -- >>> Stream.fold f stream
 -- ("Even 50","Odd 50")
 --
--- Terminating folds can be combined to parse the stream serially such that the
--- first fold consumes the input until it terminates and the second fold
--- consumes the rest of the input until it terminates:
+-- Folds can be combined to parse the stream serially such that the first fold
+-- consumes the input until it terminates and the second fold consumes the rest
+-- of the input until it terminates:
 --
 -- >>> f = Fold.serialWith (,) (Fold.take 8 Fold.toList) (Fold.takeEndBy (== '\n') Fold.toList)
 -- >>> Stream.fold f $ Stream.fromList "header: hello\n"
 -- ("header: ","hello\n")
+--
+-- Please note that if the first fold is a non-terminating fold like 'sum', it
+-- will consume the entire input stream.
 --
 -- A 'Fold' can be applied repeatedly on a stream to transform it to a stream
 -- of fold results. To split a stream on newlines:
