@@ -1,9 +1,10 @@
+-- XXX We should somehow try to introduce terminating folds and unfolds in the tutorial as well?
 {-# OPTIONS_GHC -fno-warn-unused-imports #-}
 -- |
 -- Module      : Streamly.Tutorial
 -- Copyright   : (c) 2017 Composewell Technologies
 --
--- License     : BSD3
+-- License     : BSD3-Clause
 -- Maintainer  : streamly@composewell.com
 --
 -- Streamly is a general computing framework based on concurrent data flow
@@ -24,7 +25,7 @@
 -- used to fine tune the concurrency control.
 --
 -- Streaming and concurrency together enable expressing reactive applications
--- conveniently. See the @CirclingSquare@ example in 
+-- conveniently. See the @CirclingSquare@ example in
 -- <https://github.com/composewell/streamly-examples Streamly Examples> for
 -- a simple SDL based FRP example. To summarize, streamly provides a unified
 -- computing framework for streaming, non-determinism and functional reactive
@@ -36,7 +37,7 @@
 -- look at:
 --
 --  * The quick overview in the package <README.md README file>.
---  * The overview of streams and folds in the "Streamly" module.
+--  * The overview of streams and folds in the "Streamly.Prelude" module.
 --
 -- Once you finish this tutorial, see the last section for further reading
 -- resources.
@@ -199,6 +200,7 @@ import Control.Monad.Trans.Class   (MonadTrans (lift))
 --
 -- Similarly, the 'Serial' type is almost a drop in replacement for pure lists,
 -- pure lists are a special case of monadic streams. If you use 'nil' in place
+-- XXX '[]' and ':' are not represented properly in haddocks. They are not linked
 -- of '[]' and '|:' in place ':' you can replace a list with a 'Serial' stream.
 -- The only difference is that the elements must be monadic type and to operate
 -- on the streams we must use the corresponding functions from
@@ -280,16 +282,17 @@ import Control.Monad.Trans.Class   (MonadTrans (lift))
 -- The following table summarizes the basic types and the corresponding wide
 -- variants:
 --
+-- XXX WAhead does not exist?
 -- @
--- +------------+-----------+
--- | Deep       | Wide      |
--- +============+===========+
--- | 'Serial'     | 'WSerial'   |
--- +------------+-----------+
--- | 'Ahead'      | 'WAhead'    |
--- +------------+-----------+
--- | 'Async'      | 'WAsync'    |
--- +------------+-----------+
+-- +------------+------------+
+-- | Deep       | Wide       |
+-- +============+============+
+-- | 'Serial'     | 'WSerial'|
+-- +------------+------------+
+-- | 'Ahead'      | 'WAhead' |
+-- +------------+------------+
+-- | 'Async'      | 'WAsync' |
+-- +------------+------------+
 -- @
 --
 -- Other than these types there are also 'ZipSerial' and 'ZipAsync' types that
@@ -341,6 +344,8 @@ import Control.Monad.Trans.Class   (MonadTrans (lift))
 
 -- $generating
 --
+-- XXX We should introduce Unfolds here? Probably not. That's only serial generation?
+-- XXX We should probably use a seperate section for that.
 -- We will assume the following imports in this tutorial. Go ahead, fire up a
 -- GHCi session and import these lines to start playing.
 --
@@ -365,7 +370,8 @@ import Control.Monad.Trans.Class   (MonadTrans (lift))
 --
 -- To create a singleton stream from a pure value use 'yield' or 'pure' and to
 -- create a singleton stream from a monadic action use 'yieldM'. Note that in
--- case of Zip applicative streams "pure" repeats the value to generate an
+-- XXX Intentionally double quoted pure? "pure"?
+-- case of zip applicative streams "pure" repeats the value to generate an
 -- infinite stream.
 --
 -- @
@@ -429,6 +435,7 @@ import Control.Monad.Trans.Class   (MonadTrans (lift))
 
 -- $eliminating
 --
+-- XXX Do we you want to introduce terminating folds here?
 -- We have already seen 'drain' and 'toList' to eliminate a stream in the
 -- examples above.  'drain' runs a stream discarding the results i.e. only
 -- for effects.  'toList' runs the stream and collects the results in a list.
@@ -442,6 +449,7 @@ import Control.Monad.Trans.Class   (MonadTrans (lift))
 -- imperative paradigm. We iterate over every element in the stream and perform
 -- certain transformations for each element.  Transformations may involve
 -- mapping functions over the elements, filtering elements from the stream or
+-- XXX folding all elements to a single value? sounds like elimination.
 -- folding all the elements in the stream into a single value. Streamly streams
 -- are exactly like lists and you can perform all the transformations in the
 -- same way as you would on lists.
@@ -497,6 +505,7 @@ import Control.Monad.Trans.Class   (MonadTrans (lift))
 -- Because both the stages run concurrently, we would see a delay of only 1
 -- second instead of 2 seconds in the following:
 --
+-- XXX The first element takes 2 seconds to print?
 -- @
 -- > let p n = threadDelay (n * 1000000) >> return n
 -- > S.'drain' $ S.'repeatM' (p 1) '|&' S.'mapM' (\\x -> p 1 >> print x)
@@ -516,6 +525,7 @@ import Control.Monad.Trans.Class   (MonadTrans (lift))
 -- In most of example snippets we do not repeat the imports. Where imports are
 -- not explicitly specified use the imports shown below.
 --
+-- XXX Full name imports?
 -- @
 -- import "Streamly.Prelude" ((|:), nil)
 -- import qualified "Streamly.Prelude" as S
@@ -597,6 +607,7 @@ import Control.Monad.Trans.Class   (MonadTrans (lift))
 -- to the first stream again and so on.
 -- The following example prints the sequence 1, 3, 2, 4
 --
+-- XXX We might want to add an example with 3 compositions depicting how the binary-ness effects the priority.
 -- @
 -- main = S.'drain' . S.'wSerially' $ (print 1 |: print 2 |: S.'nil') <> (print 3 |: print 4 |: S.'nil')
 -- @
@@ -741,6 +752,7 @@ import Control.Monad.Trans.Class   (MonadTrans (lift))
 -- the pull rate of the consumer. The following example prints an output every
 -- second as all of the actions are concurrent.
 --
+-- XXX We use delay, the outputs should be prefixed with ThreadId?
 -- @
 -- main = S.'drain' . S.'asyncly' $ (delay 1 <> delay 2) <> (delay 3 <> delay 4)
 -- @
@@ -819,6 +831,7 @@ import Control.Monad.Trans.Class   (MonadTrans (lift))
 -- In the following example we can see that outputs are produced in the breadth
 -- first traversal order but this is not guaranteed.
 --
+-- XXX We might want to add a larger example with 3 compositions
 -- @
 -- main = S.'drain' . S.'wAsyncly' $ (S.'serially' $ print 1 |: print 2 |: S.'nil') <> (S.'serially' $ print 3 |: print 4 |: S.'nil')
 -- @
@@ -1458,8 +1471,9 @@ import Control.Monad.Trans.Class   (MonadTrans (lift))
 -- @userAction@ can be "potion" or "quit". When the user types "potion" the
 -- health improves and the game continues.
 --
+-- XXX This is not rendered properly.
 -- @
--- {-\# LANGUAGE FlexibleContexts #-}
+-- {-\# LANGUAGE FlexibleContexts #-} -- Probably because of this? "#" should be escaped?
 --
 -- import "Streamly.Prelude" (MonadAsync, SerialT)
 -- import "Streamly.Prelude" as S
@@ -1513,7 +1527,7 @@ import Control.Monad.Trans.Class   (MonadTrans (lift))
 --     void $ runStateT runGame 60
 -- @
 --
--- You can also find the source of this example in the streamly-examples repo 
+-- You can also find the source of this example in the streamly-examples repo
 -- as <https://github.com/composewell/streamly-examples/tree/master/AcidRain.hs AcidRain.hs>.
 -- It has been adapted from Gabriel's
 -- <https://hackage.haskell.org/package/pipes-concurrency-2.0.8/docs/Pipes-Concurrent-Tutorial.html pipes-concurrency>
@@ -1724,7 +1738,6 @@ import Control.Monad.Trans.Class   (MonadTrans (lift))
 
 -- $furtherReading
 --
--- * Read the documentation of "Streamly" module
 -- * Read the documentation of "Streamly.Prelude" module
 -- * See the examples in <https://github.com/composewell/streamly-examples streamly-examples> repo.
 -- * See the tests in the "test" directory of the package
