@@ -22,6 +22,7 @@ module Streamly.Internal.Data.Stream.IsStream.Top
 
     -- ** Reordering
     , sortBy
+    , sortByD
 
     -- * Nesting
     -- ** Set like operations
@@ -63,6 +64,7 @@ import Streamly.Internal.Data.SVar (MonadAsync)
 import Streamly.Internal.Data.Stream.IsStream.Common (concatM)
 import Streamly.Internal.Data.Stream.Prelude (foldl', fromList)
 import Streamly.Internal.Data.Stream.Serial (SerialT)
+import Streamly.Internal.Data.Stream.StreamD.Type (yield)
 import Streamly.Internal.Data.Stream.StreamK (IsStream)
 import Streamly.Internal.Data.Time.Units (NanoSecond64(..), toRelTime64)
 
@@ -75,9 +77,13 @@ import qualified Streamly.Internal.Data.Stream.IsStream.Generate as Stream
 import qualified Streamly.Internal.Data.Stream.IsStream.Expand as Stream
 import qualified Streamly.Internal.Data.Stream.IsStream.Reduce as Stream
 import qualified Streamly.Internal.Data.Stream.IsStream.Transform as Stream
+import qualified Streamly.Internal.Data.Stream.StreamD.Nesting as NS
 import qualified Streamly.Internal.Data.Stream.StreamK as StreamK
 
 import Prelude hiding (filter, zipWith, concatMap, concat)
+
+
+
 
 -- $setup
 -- >>> :m
@@ -194,6 +200,10 @@ sortBy :: (IsStream t, Monad m) => (a -> a -> Ordering) -> t m a -> t m a
 -- XXX creating StreamD and using D.mergeBy may be more efficient due to fusion
 sortBy f = Stream.concatPairsWith (Stream.mergeBy f) Stream.yield
 
+{-# INLINE sortByD #-}
+sortByD :: (IsStream t, Monad m) => (a -> a -> Ordering) -> t m a -> t m a
+-- XXX creating StreamD and using D.mergeBy may be more efficient due to fusion
+sortByD f = Stream.concatPairsWithD (NS.mergeBy f) yield
 ------------------------------------------------------------------------------
 -- SQL Joins
 ------------------------------------------------------------------------------

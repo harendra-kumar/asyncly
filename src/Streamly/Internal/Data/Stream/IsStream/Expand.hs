@@ -144,6 +144,7 @@ module Streamly.Internal.Data.Stream.IsStream.Expand
     -- | See the notes about suitable merge functions in the 'concatMapWith'
     -- section.
     , concatPairsWith
+    , concatPairsWithD
 
     -- * IterateMap
     -- | Map and flatten Trees of Streams
@@ -703,6 +704,14 @@ concatPairsWith :: IsStream t =>
     -> t m a
     -> t m b
 concatPairsWith = K.concatPairsWith
+
+{-# INLINE concatPairsWithD #-}
+concatPairsWithD :: (IsStream t , Monad m) =>
+       (S.Stream m b -> S.Stream m b -> S.Stream m b)
+    -> (a -> S.Stream m b)
+    -> t m a
+    -> t m b
+concatPairsWithD c f z = D.fromStreamD $ S.concatPairsWith c f (D.toStreamD z)
 
 ------------------------------------------------------------------------------
 -- IterateMap - Map and flatten Trees of Streams

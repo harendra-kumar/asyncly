@@ -23,6 +23,7 @@
 -- The zipWithM combinator in this module has been adapted from the vector
 -- package (c) Roman Leshchinskiy.
 --
+{-# OPTIONS_GHC -Wno-overlapping-patterns #-}
 module Streamly.Internal.Data.Stream.StreamD.Nesting
     (
     -- * Generate
@@ -140,6 +141,7 @@ module Streamly.Internal.Data.Stream.StreamD.Nesting
     -- | Opposite to compact in ArrayStream
     , splitInnerBy
     , splitInnerBySuffix
+    , concatPairsWith
     )
 where
 
@@ -169,6 +171,7 @@ import qualified Streamly.Internal.Data.Parser.ParserD as PRD
 import qualified Streamly.Internal.Ring.Foreign as RB
 
 import Streamly.Internal.Data.Stream.StreamD.Type
+import Streamly.Internal.Data.Stream.StreamD.Generate (cons, nil)
 import Streamly.Internal.Data.SVar
 
 import Prelude hiding (concatMap, mapM, zipWith)
@@ -2324,3 +2327,66 @@ splitInnerBySuffix splitter joiner (Stream step1 state1) =
 
     step _ (SplitYielding x next) = return $ Yield x next
     step _ SplitFinishing = return Stop
+
+{-# INLINE_NORMAL concatPairsWith #-}
+concatPairsWith
+    :: (Monad m)
+    => (Stream m b -> Stream m b -> Stream m b)
+    -> (a -> Stream m b)
+    -> Stream m a
+    -> Stream m b
+concatPairsWith combine f (Stream stepa sa) = 
+    Stream step (sa, Nothing, Nothing)
+
+    where
+
+    {-# INLINE_LATE step #-}
+    step gst (s, Nothing, Nothing) = do
+        ret <- stepa (adaptState gst) s
+        return $ case ret of
+            Stop        -> Stop
+            Yield a sa' -> Skip (sa', Just a, Nothing)
+            Skip sa'    -> Skip (sa', Nothing, Nothing)
+
+    step gst (s, Just a, Nothing) = do
+        ret <- stepa (adaptState gst) s
+        return $ case ret of
+            Stop         -> Skip (s, Nothing, Just (f a))
+            Yield a1 sa' -> 
+                Skip ( sa'
+                     , Nothing
+                     , Just (concatPairsWith  combine  
+                        (\(x,y) -> combine x y) 
+                            $ (f a, f a1) `cons` makePairs Nothing sa'))
+            Skip sa'     -> Skip (sa', Just a, Nothing)
+
+    step gst (s, Nothing, Just (UnStream nextb sb)) = do
+        ret <- nextb (adaptState gst) sb
+        return $ case ret of
+            Stop        -> Stop
+            Yield b sb' -> Yield b (s, Nothing, Just (Stream nextb sb'))
+            Skip sb'    -> Skip (s, Nothing, Just (Stream nextb sb'))
+
+    step _ _  = error "Invalid steps of final Stream"     
+
+    makePairs Nothing sc = Stream step3 (sc, Nothing, Nothing)
+
+        where
+
+        step3 gst (s, x, Nothing) = do
+            ret <- stepa (adaptState gst) s
+            return $ case ret of
+                Stop        -> Stop
+                Yield a sc' -> Skip (sc', Just a,  Just a)
+                Skip sc'    -> Skip (sc', x,  Nothing)
+
+        step3 gst (s, Just a, Just a2) = do
+            ret <- stepa (adaptState gst) s
+            return $ case ret of
+                Stop            -> Yield  (f a, nil) (s, Nothing, Nothing)
+                Yield a1 sc'    -> Yield (f a, f a1) (sc', Nothing, Nothing)
+                Skip sc'        -> Skip (sc', Just a, Just a2)
+
+        step3 _ _  = error "Invalid steps of makePairs"         
+
+    makePairs _ _ = error "Invalid makePairs options"             
