@@ -704,12 +704,48 @@ serialWith func (Fold stepL initialL extractL) (Fold stepR initialR extractR) =
 -- | Same as applicative '*>'. Run two folds serially one after the other
 -- discarding the result of the first.
 --
--- /Unimplemented/
---
+
+{-# ANN type SerialRunner Fuse #-}
+data SerialRunner sL sR
+    = SerialLeft !sL 
+    | SerialRight !sR
+
 {-# INLINE serial_ #-}
-serial_ :: -- Monad m =>
+serial_ :: Monad m =>
     Fold m x a -> Fold m x b -> Fold m x b
-serial_ _f1 _f2 = undefined
+serial_ (Fold stepL beginL _) (Fold stepR beginR doneR) =
+    Fold step begin done
+
+    where
+
+    begin = do
+        resL <- beginL
+        resR <- beginR
+        return
+            $ case resL of
+                  Partial sl -> Partial $ SerialLeft sl                         
+                  Done _ -> first SerialRight resR
+
+    step (SerialLeft sL) a = do
+        resL <- stepL sL a
+        case resL of
+            Partial sL1 -> return $ Partial $ SerialLeft sL1                
+            Done _ -> do
+                resR <- beginR
+                case resR of
+                    Partial sr -> return $ Partial $ SerialRight sr  
+                    Done bR -> return $ Done bR    
+
+    step (SerialRight sR) a = do
+        resR <- stepR sR a
+        case resR of
+                  Partial sR1 -> return $ Partial $ SerialRight sR1
+                  Done bR -> return $ Done bR
+
+    done (SerialLeft _) = error "Done from left fold is invalid."
+       
+    done (SerialRight s) = doneR s     
+
 
 {-# ANN type GenericRunner Fuse #-}
 data GenericRunner sL sR bL bR
@@ -796,8 +832,68 @@ teeWith f (Fold stepL beginL doneL) (Fold stepR beginR doneR) =
 -- /Unimplemented/
 --
 {-# INLINE teeWithFst #-}
-teeWithFst :: (b -> c -> d) -> Fold m a b -> Fold m a c -> Fold m a d
-teeWithFst = undefined
+teeWithFst :: Monad m => (b -> c -> d) -> Fold m a b -> Fold m a c -> Fold m a d
+teeWithFst f (Fold stepL beginL doneL) (Fold stepR beginR doneR) =
+    Fold step begin done
+
+    where
+
+    begin = do
+        resL <- beginL
+        resR <- beginR
+
+        case resL of
+            Partial sl ->
+                return $ Partial $
+                    case resR of
+                        Partial sr -> RunBoth sl sr
+                        Done br -> RunLeft sl br
+            Done bl -> do
+                case resR of
+                    Partial sr -> do
+                        br <- doneR sr
+                        return $ Done $ f bl br
+                    Done br -> return $ Done $ f bl br
+
+    step (RunBoth sL sR) a = do
+        resL <- stepL sL a
+        resR <- stepR sR a
+        case resL of
+            Partial sL1 ->
+                return
+                    $ Partial
+                    $ case resR of
+                          Partial sR1 -> RunBoth sL1 sR1
+                          Done bR -> RunLeft sL1 bR
+            Done bL ->
+                     case resR of
+                          Partial sR1 -> do
+                                br <- doneR sR1
+                                return $ Done $ f bL br
+                          Done bR -> return $ Done $ f bL bR
+    step (RunLeft sL bR) a = do
+        resL <- stepL sL a
+        return
+            $ case resL of
+                  Partial sL1 -> Partial $ RunLeft sL1 bR
+                  Done bL -> Done $ f bL bR
+    step (RunRight bL sR) a = do
+        resR <- stepR sR a
+        return
+            $ case resR of
+                  Partial sR1 -> Partial $ RunRight bL sR1
+                  Done bR -> Done $ f bL bR
+
+    done (RunBoth sL sR) = do
+        bL <- doneL sL
+        bR <- doneR sR
+        return $ f bL bR
+    done (RunLeft sL bR) = do
+        bL <- doneL sL
+        return $ f bL bR
+    done (RunRight bL sR) = do
+        bR <- doneR sR
+        return $ f bL bR
 
 -- | Like 'teeWith' but terminates as soon as any one of the two folds
 -- terminates.
@@ -805,8 +901,69 @@ teeWithFst = undefined
 -- /Unimplemented/
 --
 {-# INLINE teeWithMin #-}
-teeWithMin :: (b -> c -> d) -> Fold m a b -> Fold m a c -> Fold m a d
-teeWithMin = undefined
+teeWithMin :: Monad m => (b -> c -> d) -> Fold m a b -> Fold m a c -> Fold m a d
+teeWithMin f (Fold stepL beginL doneL) (Fold stepR beginR doneR) =
+    Fold step begin done
+
+    where
+
+    begin = do
+        resL <- beginL
+        resR <- beginR
+        case resL of
+            Partial sL1 -> do
+                case resR of
+                    Partial sR1 -> return $ Partial $ RunBoth sL1 sR1   
+                    Done br -> do
+                        bl <- doneL sL1
+                        return $ Done $ f bl br
+                    
+            Done bl -> do
+                case resR of
+                    Partial sr -> do
+                        br <- doneR sr
+                        return $ Done $ f bl br
+                    Done br -> return $ Done $ f bl br
+
+    step (RunBoth sL sR) a = do
+        resL <- stepL sL a
+        resR <- stepR sR a
+        case resL of
+            Partial sL1 ->
+                case resR of
+                    Partial sR1 -> return $ Partial $ RunBoth sL1 sR1
+                    Done bR -> do
+                        bL <- doneL sL1
+                        return $ Done $ f bL bR
+            Done bL ->
+                case resR of
+                    Partial sR1 -> do
+                        br <- doneR sR1
+                        return $ Done $ f bL br
+                    Done bR -> return $ Done $ f bL bR
+    step (RunLeft sL bR) a = do
+        resL <- stepL sL a
+        return
+            $ case resL of
+                Partial sL1 -> Partial $ RunLeft sL1 bR
+                Done bL -> Done $ f bL bR
+    step (RunRight bL sR) a = do
+        resR <- stepR sR a
+        return
+            $ case resR of
+                Partial sR1 -> Partial $ RunRight bL sR1
+                Done bR -> Done $ f bL bR
+
+    done (RunBoth sL sR) = do
+        bL <- doneL sL
+        bR <- doneR sR
+        return $ f bL bR
+    done (RunLeft sL bR) = do
+        bL <- doneL sL
+        return $ f bL bR
+    done (RunRight bL sR) = do
+        bR <- doneR sR
+        return $ f bL bR
 
 -- | Shortest alternative. Apply both folds in parallel but choose the result
 -- from the one which consumed least input i.e. take the shortest succeeding
@@ -815,9 +972,44 @@ teeWithMin = undefined
 -- /Unimplemented/
 --
 {-# INLINE shortest #-}
-shortest :: -- Monad m =>
+shortest ::  Monad m =>
     Fold m x a -> Fold m x a -> Fold m x a
-shortest _f1 _f2 = undefined
+shortest (Fold stepL beginL doneL) (Fold stepR beginR _) =
+    Fold step begin done
+
+    where
+
+    begin = do
+        resL <- beginL
+        resR <- beginR
+        return $
+            case resL of
+                Partial sl ->
+                    case resR of
+                        Partial sr -> Partial $ RunBoth sl sr
+                        Done br -> Done br
+                Done bl -> Done bl
+
+    step (RunBoth sL sR) a = do
+        resL <- stepL sL a
+        resR <- stepR sR a
+        return $
+            case resL of
+                Partial sL1 ->
+                    case resR of
+                        Partial sR1 -> Partial $ RunBoth sL1 sR1
+                        Done bR -> Done bR
+                Done bL -> Done bL
+
+    step (RunLeft _ _) _ = error "Invalid RunLeft option"
+
+    step (RunRight _ _) _ = error "Invalid RunRight option"
+
+    done (RunBoth sL _) = doneL sL -- which one to pick left or right?
+
+    done (RunLeft _ bR) = return bR
+
+    done (RunRight bL _) = return bL
 
 -- | Longest alternative. Apply both folds in parallel but choose the result
 -- from the one which consumed more input i.e. take the longest succeeding
@@ -826,9 +1018,59 @@ shortest _f1 _f2 = undefined
 -- /Unimplemented/
 --
 {-# INLINE longest #-}
-longest :: -- Monad m =>
+longest :: Monad m =>
     Fold m x a -> Fold m x a -> Fold m x a
-longest _f1 _f2 = undefined
+longest (Fold stepL beginL doneL) (Fold stepR beginR doneR) =
+    Fold step begin done
+
+    where
+
+    begin = do
+        resL <- beginL
+        resR <- beginR
+        return
+            $ case resL of
+                    Partial sl ->
+                        Partial
+                            $ case resR of
+                                Partial sr -> RunBoth sl sr
+                                Done br -> RunLeft sl br
+                    Done bl -> first (RunRight bl) resR
+
+    step (RunBoth sL sR) a = do
+        resL <- stepL sL a
+        resR <- stepR sR a
+        case resL of
+            Partial sL1 ->
+                return
+                    $ Partial
+                    $ case resR of
+                        Partial sR1 -> RunBoth sL1 sR1
+                        Done bR -> RunLeft sL1 bR
+            Done bL ->
+                return
+                    $ case resR of
+                        Partial sR1 -> Partial $ RunRight bL sR1
+                        Done bR -> Done bR
+    step (RunLeft sL bR) a = do
+        resL <- stepL sL a
+        return
+            $ case resL of
+                Partial sL1 -> Partial $ RunLeft sL1 bR
+                Done bL -> Done bL
+    step (RunRight bL sR) a = do
+        resR <- stepR sR a
+        return
+            $ case resR of
+                Partial sR1 -> Partial $ RunRight bL sR1
+                Done bR -> Done bR
+
+    --done (RunBoth sL sR) = do -- which one to pick ?
+    done (RunBoth sL _) = doneL sL
+
+    done (RunLeft sL _) = doneL sL
+    
+    done (RunRight _ sR) = doneR sR
 
 data ConcatMapState m sa a c
     = B !sa
