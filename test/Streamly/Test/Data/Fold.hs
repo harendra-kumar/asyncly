@@ -370,6 +370,101 @@ teeWithLength =
             v3 = Prelude.length ls
         assert (v1 == (v2, v3))
 
+teeWithFstLength :: Property
+teeWithFstLength =
+    forAll (listOf1 (chooseInt (intMin, intMax)))
+        $ \ls0 -> monadicIO $ action ls0
+
+    where
+
+    action ls = do
+        v1 <- run $ S.fold (FL.teeWithFst (,) (FL.take 5 FL.sum) FL.length) $ S.fromList ls
+        let v2 = Prelude.sum (Prelude.take 5 ls)
+            v3 = Prelude.length (Prelude.take 5 ls)
+        assert (v1 == (v2, v3))
+
+partitionByM :: Property
+partitionByM =
+    forAll (listOf1 (chooseInt (intMin, intMax)))
+        $ \ls0 -> monadicIO $ action ls0
+
+    where
+        
+    action ls = do
+        let f = \x -> if odd x then return (Left x) else return (Right x)
+        v1 <- run $ S.fold (FL.partitionByM f FL.length FL.length) $ S.fromList ls
+        let v2 = foldl (\b a -> if odd a then b+1 else b) 0 ls
+            v3 = foldl (\b a -> if even a then b+1 else b) 0 ls
+        assert (v1 == (v2, v3))
+
+partitionByFstM :: Property
+partitionByFstM =
+    forAll (listOf1 (chooseInt (intMin, intMax)))
+        $ \ls0 -> monadicIO $ action ls0
+
+    where
+        
+    action _ = do
+        let f = \x -> if odd x then return (Left x) else return (Right x)
+        v1 <- run $ S.fold (FL.partitionByFstM f (FL.take 25 FL.length) FL.length) (S.fromList ([1..100]:: [Int]))
+        let v2 = foldl (\b a -> if odd a then b+1 else b) 0 ([1..49] :: [Int])
+            v3 = foldl (\b a -> if even a then b+1 else b) 0 ([1..49] :: [Int])       
+        assert (v1 == (v2, v3))        
+
+partitionByMinM1 :: Property
+partitionByMinM1 =
+    forAll (listOf1 (chooseInt (intMin, intMax)))
+        $ \ls0 -> monadicIO $ action ls0
+
+    where
+        
+    action _ = do
+        let f = \x -> if odd x then return (Left x) else return (Right x)
+        v1 <- run $ S.fold (FL.partitionByMinM f  FL.length (FL.take 25 FL.length)) (S.fromList ([1..100]:: [Int]))
+        let v2 = foldl (\b a -> if odd a then b+1 else b) 0 ([1..50] :: [Int])
+            v3 = foldl (\b a -> if even a then b+1 else b) 0 ([1..50] :: [Int])
+        assert (v1 == (v2, v3))         
+
+partitionByMinM2 :: Property
+partitionByMinM2 =
+    forAll (listOf1 (chooseInt (intMin, intMax)))
+        $ \ls0 -> monadicIO $ action ls0
+
+    where
+        
+    action _ = do
+        let f = \x -> if odd x then return (Left x) else return (Right x)
+        v1 <- run $ S.fold (FL.partitionByMinM f (FL.take 25 FL.length) FL.length) (S.fromList ([1..100]:: [Int]))
+        let v2 = foldl (\b a -> if odd a then b+1 else b) 0 ([1..49] :: [Int])
+            v3 = foldl (\b a -> if even a then b+1 else b) 0 ([1..49] :: [Int])
+        assert (v1 == (v2, v3))
+
+teeWithMinLength1 :: Property
+teeWithMinLength1 =
+    forAll (listOf1 (chooseInt (intMin, intMax)))
+        $ \ls0 -> monadicIO $ action ls0
+
+    where
+
+    action ls = do
+        v1 <- run $ S.fold (FL.teeWithMin (,) (FL.take 5 FL.sum)  FL.length) $ S.fromList ls
+        let v2 = Prelude.sum (Prelude.take 5 ls)
+            v3 = Prelude.length (Prelude.take 5 ls)
+        assert (v1 == (v2, v3))
+
+
+teeWithMinLength2 :: Property
+teeWithMinLength2 =
+    forAll (listOf1 (chooseInt (intMin, intMax)))
+        $ \ls0 -> monadicIO $ action ls0
+
+    where
+
+    action ls = do
+        v1 <- run $ S.fold (FL.teeWithMin (,) FL.sum  (FL.take 5 FL.length)) $ S.fromList ls
+        let v2 = Prelude.sum (Prelude.take 5 ls)
+            v3 = Prelude.length (Prelude.take 5 ls)
+        assert (v1 == (v2, v3))
 teeWithMax :: Property
 teeWithMax =
     forAll (listOf1 (chooseInt (intMin, intMax)))
@@ -513,7 +608,14 @@ main = hspec $ do
         -- Distributing
         -- tee
         prop "teeWithLength" Main.teeWithLength
+        prop "teeWithFstLength" Main.teeWithFstLength
+        prop "teeWithMinLength1" Main.teeWithMinLength1
+        prop "teeWithMinLength2" Main.teeWithMinLength2
         prop "teeWithMax" Main.teeWithMax
+        prop "partitionByM" Main.partitionByM
+        prop "partitionByFstM" Main.partitionByFstM
+        prop "partitionByMinM1" Main.partitionByMinM1
+        prop "partitionByMinM2" Main.partitionByMinM2
         prop "distribute" Main.distribute
 
         -- Partitioning
