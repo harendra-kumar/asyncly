@@ -149,7 +149,9 @@ library
 
 common bench-options
   import: compile-options, optimization-options, bench-depends
-  ghc-options: -rtsopts +RTS -M512M -RTS
+  ghc-options: -rtsopts
+  if flag(limit-build-mem)
+    ghc-options: +RTS -M512M -RTS
   build-depends: streamly-benchmarks == 0.0.0
 
 -- Some benchmarks are threaded some are not
@@ -157,7 +159,9 @@ common bench-options-threaded
   import: compile-options, optimization-options, bench-depends
   -- -threaded and -N2 is important because some GC and space leak issues
   -- trigger only with these options.
-  ghc-options: -threaded -rtsopts -with-rtsopts "-N2" +RTS -M512M -RTS
+  ghc-options: -threaded -rtsopts -with-rtsopts "-N2"
+  if flag(limit-build-mem)
+    ghc-options: +RTS -M512M -RTS
   build-depends: streamly-benchmarks == 0.0.0
 
 -------------------------------------------------------------------------------
@@ -294,7 +298,6 @@ benchmark Data.Parser.ParserD
     build-depends: exceptions >= 0.8   && < 0.11
   if flag(limit-build-mem)
     ghc-options: +RTS -M750M -RTS
-
 
 benchmark Data.Parser.ParserK
   import: bench-options
@@ -453,6 +456,21 @@ benchmark Data.Array.Foreign
   main-is: Streamly/Benchmark/Data/Array.hs
   other-modules: Streamly.Benchmark.Data.ArrayOps
   cpp-options: -DMEMORY_ARRAY
+
+-------------------------------------------------------------------------------
+-- Array Stream Benchmarks
+-------------------------------------------------------------------------------
+
+benchmark Data.Array.Stream.Foreign
+  import: bench-options
+  type: exitcode-stdio-1.0
+  hs-source-dirs: Streamly/Benchmark/Data/Array/Stream
+  main-is: Foreign.hs
+  if impl(ghcjs)
+    buildable: False
+  else
+    buildable: True
+    build-depends: exceptions >= 0.8   && < 0.11
 
 -------------------------------------------------------------------------------
 -- FileIO Benchmarks

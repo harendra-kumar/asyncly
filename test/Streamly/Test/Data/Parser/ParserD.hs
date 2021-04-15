@@ -13,6 +13,7 @@ import Test.QuickCheck.Monadic (monadicIO, assert, run)
 import qualified Data.List as List
 import qualified Prelude
 import qualified Streamly.Internal.Data.Array.Foreign as A
+import qualified Streamly.Internal.Data.Array.Stream.Foreign as ArrayStream
 import qualified Streamly.Internal.Data.Fold as FL
 import qualified Streamly.Internal.Data.Parser.ParserD as P
 import qualified Streamly.Internal.Data.Producer.Source as Source
@@ -635,6 +636,25 @@ parseUnfold = do
 
             listEquals (==) xs ls
 
+parseArray :: Property
+parseArray = do
+    let len = 200
+    -- ls = input list (stream)
+    -- clen = chunk size
+    -- tlen = parser take size
+    forAll
+        ((,,)
+            <$> vectorOf len (chooseAny :: Gen Int)
+            <*> chooseInt (1, len)
+            <*> chooseInt (0, len)) $ \(ls, clen, tlen) ->
+        monadicIO $ do
+            (ls1, str) <-
+                run $ ArrayStream.parse
+                          (P.fromFold (FL.take tlen FL.toList))
+                          (S.chunksOf clen (A.writeN clen) (S.fromList ls))
+            ls2 <- run $ S.toList $ ArrayStream.concat str
+            listEquals (==) (ls1 ++ ls2) ls
+
 -------------------------------------------------------------------------------
 -- Test for a particular case hit during fs events testing
 -------------------------------------------------------------------------------
@@ -720,6 +740,7 @@ main =
         prop "parseMany" parseMany
         prop "parseMany2Events" parseMany2Events
         prop "parseUnfold" parseUnfold
+        prop "parseArray" parseArray
 
     describe "test for accumulator" $ do
         prop "P.fromFold FL.sum = FL.sum" fromFold

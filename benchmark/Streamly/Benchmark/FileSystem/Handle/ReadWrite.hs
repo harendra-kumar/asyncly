@@ -29,7 +29,6 @@ import Streamly.Internal.Data.Array.Foreign.Type (defaultChunkSize)
 import qualified Streamly.FileSystem.Handle as FH
 import qualified Streamly.Internal.Data.Unfold as IUF
 import qualified Streamly.Internal.FileSystem.Handle as IFH
-import qualified Streamly.Internal.Data.Array.Stream.Foreign as AS
 import qualified Streamly.Data.Array.Foreign as A
 import qualified Streamly.Prelude as S
 
@@ -37,7 +36,6 @@ import Gauge hiding (env)
 import Streamly.Benchmark.Common.Handle
 
 #ifdef INSPECTION
-import Foreign.Storable (Storable)
 import Streamly.Internal.Data.Stream.StreamD.Type (Step(..))
 
 import qualified Streamly.Internal.Data.Stream.StreamD.Type as D
@@ -207,48 +205,6 @@ o_1_space_copy env =
     ]
 
 -------------------------------------------------------------------------------
--- copy with group/ungroup transformations
--------------------------------------------------------------------------------
-
--- | Lines and unlines
-copyChunksSplitInterposeSuffix :: Handle -> Handle -> IO ()
-copyChunksSplitInterposeSuffix inh outh =
-    S.fold (IFH.write outh)
-        $ AS.interposeSuffix 10
-        $ AS.splitOnSuffix 10
-        $ IFH.toChunks inh
-
-#ifdef INSPECTION
-inspect $ hasNoTypeClassesExcept 'copyChunksSplitInterposeSuffix [''Storable]
-inspect $ 'copyChunksSplitInterposeSuffix `hasNoType` ''Step
-#endif
-
--- | Words and unwords
-copyChunksSplitInterpose :: Handle -> Handle -> IO ()
-copyChunksSplitInterpose inh outh =
-    S.fold (IFH.write outh)
-        $ AS.interpose 32
-        -- XXX this is not correct word splitting combinator
-        $ AS.splitOn 32
-        $ IFH.toChunks inh
-
-#ifdef INSPECTION
-inspect $ hasNoTypeClassesExcept 'copyChunksSplitInterpose [''Storable]
-inspect $ 'copyChunksSplitInterpose `hasNoType` ''Step
-#endif
-
-o_1_space_copy_toChunks_group_ungroup :: BenchEnv -> [Benchmark]
-o_1_space_copy_toChunks_group_ungroup env =
-    [ bgroup "copy/toChunks/group-ungroup"
-        [ mkBench "AS.interposeSuffix . AS.splitOnSuffix" env $ \inh outh ->
-            copyChunksSplitInterposeSuffix inh outh
-        , mkBenchSmall "AS.interpose . AS.splitOn" env $ \inh outh ->
-            copyChunksSplitInterpose inh outh
-        ]
-    ]
-
-
--------------------------------------------------------------------------------
 --
 -------------------------------------------------------------------------------
 
@@ -258,5 +214,4 @@ allBenchmarks env = Prelude.concat
     , o_1_space_copy_read env
     , o_1_space_copy_fromBytes env
     , o_1_space_copy env
-    , o_1_space_copy_toChunks_group_ungroup env
     ]

@@ -361,17 +361,18 @@ o_n_space_serial value =
 main :: IO ()
 main = do
     (value, cfg, benches) <- parseCLIOpts defaultStreamSize
-    arrays <- IP.toList $ IP.arraysOf 100 $ sourceUnfoldrM value 0
-    value `seq` runMode (mode cfg) cfg benches (allBenchmarks value arrays)
+    arraysSmall <- IP.toList $ IP.arraysOf 100 $ sourceUnfoldrM value 0
+    value `seq` runMode (mode cfg) cfg benches
+        (allBenchmarks value arraysSmall)
 
     where
 
-    allBenchmarks value arrays =
+    allBenchmarks value arraysSmall =
         [ bgroup (o_1_space_prefix moduleName) (o_1_space_serial value)
         , bgroup (o_1_space_prefix moduleName) (o_1_space_serial_spanning value)
         , bgroup (o_1_space_prefix moduleName) (o_1_space_serial_nested value)
         , bgroup (o_1_space_prefix moduleName)
-            (o_1_space_serial_unfold value arrays)
+            (o_1_space_serial_unfold value arraysSmall)
         , bgroup (o_n_heap_prefix moduleName) (o_n_heap_serial value)
         , bgroup (o_n_space_prefix moduleName) (o_n_space_serial value)
         ]

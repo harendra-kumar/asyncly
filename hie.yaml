@@ -4,6 +4,8 @@ cradle:
       config:
         cradle:
           cabal:
+            - path: "./benchmark/Streamly/Benchmark/Data/Array/Stream/Foreign.hs"
+              component: "bench:Data.Array.Stream.Foreign"
             - path: "./benchmark/Streamly/Benchmark/Data/Fold.hs"
               component: "bench:Data.Fold"
             - path: "./benchmark/Streamly/Benchmark/Data/Parser.hs"

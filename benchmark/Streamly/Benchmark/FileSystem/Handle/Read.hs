@@ -22,7 +22,6 @@ module Handle.Read
     (allBenchmarks)
 where
 
-import Data.Functor.Identity (runIdentity)
 import Data.Word (Word8)
 import GHC.Magic (inline)
 #if __GLASGOW_HASKELL__ >= 802
@@ -38,7 +37,6 @@ import qualified Streamly.Internal.Data.Array.Foreign.Type as AT
 import qualified Streamly.Internal.Data.Fold as FL
 import qualified Streamly.Internal.Data.Stream.IsStream as IP
 import qualified Streamly.Internal.FileSystem.Handle as IFH
-import qualified Streamly.Internal.Data.Array.Stream.Foreign as AS
 import qualified Streamly.Internal.Unicode.Stream as IUS
 import qualified Streamly.Prelude as S
 import qualified Streamly.Unicode.Stream as SS
@@ -56,97 +54,6 @@ import qualified Streamly.Internal.Data.Unfold as IUF
 
 import Test.Inspection
 #endif
-
--------------------------------------------------------------------------------
--- read chunked using toChunks
--------------------------------------------------------------------------------
-
--- | Get the last byte from a file bytestream.
-toChunksLast :: Handle -> IO (Maybe Word8)
-toChunksLast inh = do
-    let s = IFH.toChunks inh
-    larr <- S.last s
-    return $ case larr of
-        Nothing -> Nothing
-        Just arr -> A.readIndex arr (A.length arr - 1)
-
-#ifdef INSPECTION
-inspect $ hasNoTypeClasses 'toChunksLast
-inspect $ 'toChunksLast `hasNoType` ''Step
-#endif
-
--- | Count the number of bytes in a file.
-toChunksSumLengths :: Handle -> IO Int
-toChunksSumLengths inh =
-    let s = IFH.toChunks inh
-    in S.sum (S.map A.length s)
-
-#ifdef INSPECTION
-inspect $ hasNoTypeClasses 'toChunksSumLengths
-inspect $ 'toChunksSumLengths `hasNoType` ''Step
-#endif
-
--- | Count the number of lines in a file.
-toChunksSplitOnSuffix :: Handle -> IO Int
-toChunksSplitOnSuffix = S.length . AS.splitOnSuffix 10 . IFH.toChunks
-
-#ifdef INSPECTION
-inspect $ hasNoTypeClasses 'toChunksSplitOnSuffix
-inspect $ 'toChunksSplitOnSuffix `hasNoType` ''Step
-#endif
-
--- XXX use a word splitting combinator instead of splitOn and test it.
--- | Count the number of words in a file.
-toChunksSplitOn :: Handle -> IO Int
-toChunksSplitOn = S.length . AS.splitOn 32 . IFH.toChunks
-
-#ifdef INSPECTION
-inspect $ hasNoTypeClasses 'toChunksSplitOn
-inspect $ 'toChunksSplitOn `hasNoType` ''Step
-#endif
-
--- | Sum the bytes in a file.
-toChunksCountBytes :: Handle -> IO Word8
-toChunksCountBytes inh = do
-    let foldlArr' f z = runIdentity . S.foldl' f z . A.toStream
-    let s = IFH.toChunks inh
-    S.foldl' (\acc arr -> acc + foldlArr' (+) 0 arr) 0 s
-
-#ifdef INSPECTION
-inspect $ hasNoTypeClasses 'toChunksCountBytes
-inspect $ 'toChunksCountBytes `hasNoType` ''Step
-#endif
-
-toChunksDecodeUtf8Arrays :: Handle -> IO ()
-toChunksDecodeUtf8Arrays =
-   S.drain . IUS.decodeUtf8Arrays . IFH.toChunks
-
-#ifdef INSPECTION
-inspect $ hasNoTypeClasses 'toChunksDecodeUtf8Arrays
--- inspect $ 'toChunksDecodeUtf8ArraysLenient `hasNoType` ''Step
-#endif
-
-o_1_space_read_chunked :: BenchEnv -> [Benchmark]
-o_1_space_read_chunked env =
-    -- read using toChunks instead of read
-    [ bgroup "reduce/toChunks"
-        [ mkBench "S.last" env $ \inH _ ->
-            toChunksLast inH
-        -- Note: this cannot be fairly compared with GNU wc -c or wc -m as
-        -- wc uses lseek to just determine the file size rather than reading
-        -- and counting characters.
-        , mkBench "S.sum . S.map A.length" env $ \inH _ ->
-            toChunksSumLengths inH
-        , mkBench "AS.splitOnSuffix" env $ \inH _ ->
-            toChunksSplitOnSuffix inH
-        , mkBench "AS.splitOn" env $ \inH _ ->
-            toChunksSplitOn inH
-        , mkBench "countBytes" env $ \inH _ ->
-            toChunksCountBytes inH
-        , mkBenchSmall "US.decodeUtf8Arrays" env $ \inH _ ->
-            toChunksDecodeUtf8Arrays inH
-        ]
-    ]
 
 -- TBD reading with unfold
 
@@ -388,8 +295,7 @@ o_1_space_reduce_read_grouped env =
 
 allBenchmarks :: BenchEnv -> [Benchmark]
 allBenchmarks env = Prelude.concat
-    [ o_1_space_read_chunked env
-    , o_1_space_reduce_read env
+    [ o_1_space_reduce_read env
     , o_1_space_reduce_toBytes env
     , o_1_space_reduce_read_grouped env
     ]

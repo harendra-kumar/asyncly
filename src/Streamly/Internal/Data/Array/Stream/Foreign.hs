@@ -23,6 +23,8 @@ module Streamly.Internal.Data.Array.Stream.Foreign
 
     -- * Elimination
     , toArray
+    , parse
+    , parseD
 
     -- * Compaction
     , lpackArraysChunksOf
@@ -42,11 +44,16 @@ where
 import Control.Monad.IO.Class (MonadIO(..))
 import Data.Word (Word8)
 import Foreign.ForeignPtr (withForeignPtr, touchForeignPtr)
+-- XXX We should evolve the array module to make it so this should not be
+-- required
+import Foreign.ForeignPtr (plusForeignPtr)
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 import Foreign.Ptr (minusPtr, plusPtr, castPtr)
 import Foreign.Storable (Storable(..))
+import GHC.Exts (SpecConstrAnnotation(..))
 import GHC.ForeignPtr (ForeignPtr(..))
 import GHC.Ptr (Ptr(..))
+import GHC.Types (SPEC(..))
 import Prelude hiding (length, null, last, map, (!!), read, concat, unlines)
 
 #if !defined(mingw32_HOST_OS)
@@ -56,15 +63,21 @@ import Streamly.Internal.Data.Array.Foreign.Type (Array(..), length)
 import Streamly.Internal.Data.Fold.Type (Fold(..))
 import Streamly.Internal.Data.Stream.Serial (SerialT)
 import Streamly.Internal.Data.Stream.StreamK.Type (IsStream)
-import Streamly.Internal.Data.SVar (adaptState)
+import Streamly.Internal.Data.SVar (adaptState, defState)
 
 import qualified Streamly.Internal.Data.Array.Foreign as A
+import qualified Streamly.Internal.Data.Array.Foreign as Array
 import qualified Streamly.Internal.Data.Array.Foreign.Type as A
+import qualified Streamly.Internal.Data.Array.Foreign.Type as Array
 import qualified Streamly.Internal.Data.Array.Foreign.Mut.Type as MA
 import qualified Streamly.Internal.Data.Array.Stream.Mut.Foreign as AS
 import qualified Streamly.Internal.Data.Fold.Type as FL
+import qualified Streamly.Internal.Data.Parser.ParserD as PRD
 import qualified Streamly.Internal.Data.Stream.IsStream as S
 import qualified Streamly.Internal.Data.Stream.StreamD as D
+-- XXX Are these dependencies OK?
+import qualified Streamly.Internal.Data.Stream.StreamD.Generate as Generate
+import qualified Streamly.Internal.Data.Stream.StreamD.Nesting as Nesting
 
 -------------------------------------------------------------------------------
 -- Generation
@@ -385,3 +398,140 @@ _toArraysOf :: (MonadIO m, Storable a)
     => Int -> Fold m a (SerialT Identity (Array a))
 _toArraysOf n = FL.chunksOf n (A.writeNF n) FL.toStream
 -}
+
+-------------------------------------------------------------------------------
+-- Parsing
+-------------------------------------------------------------------------------
+
+-- We use a doubly linked list for parseArray. Below is the type (DLL) a few
+-- helper functions (*DLL)
+
+-- Representation of a doubly linked list
+{-# ANN type DLL NoSpecConstr #-}
+newtype DLL a = DLL ([a], a, [a])
+
+{-# INLINE singleDLL #-}
+singleDLL :: a -> DLL a
+singleDLL a = DLL ([], a, [])
+
+{-# INLINE bufferRDLL #-}
+bufferRDLL :: DLL a -> [a]
+bufferRDLL (DLL (_, _, br)) = br
+
+{-# INLINE dropLDLL #-}
+dropLDLL :: DLL a -> DLL a
+dropLDLL (DLL (_, a, x)) = (DLL ([], a, x))
+
+{-# INLINE nextDLL #-}
+nextDLL :: DLL a -> DLL a
+nextDLL (DLL (y, a, x:xs)) = (DLL (a:y, x, xs))
+nextDLL _ = error "nextDLL: Empty right buffer"
+
+{-# INLINE previousDLL #-}
+previousDLL :: DLL a -> DLL a
+previousDLL (DLL (y:ys, a, x)) = (DLL (ys, y, a:x))
+previousDLL _ = error "previousDLL: Empty left buffer"
+
+{-# INLINE currentDLL #-}
+currentDLL :: DLL a -> a
+currentDLL (DLL (_, x, _)) = x
+
+-- Inefficient stuff but probably Ok for our use case.
+{-# INLINE insertDLL #-}
+insertDLL :: a -> DLL a -> DLL a
+insertDLL a (DLL (y, a1, x)) = (DLL (y, a1, x ++ [a]))
+
+{-# INLINE_NORMAL parseD #-}
+parseD ::
+       forall m a b. (MonadIO m, Storable a)
+    => PRD.Parser m a b
+    -> D.Stream m (Array.Array a)
+    -> m (b, D.Stream m (Array.Array a))
+parseD (PRD.Parser pstep pinitial pextract) strm@(D.UnStream step state) = do
+    res <- pinitial
+    case res of
+        PRD.IPartial ps -> goInit SPEC ps state
+        PRD.IDone b -> return (b, strm)
+        PRD.IError err -> error err
+
+    where
+
+    goInit !_ ps s = do
+        res <- step defState s
+        case res of
+            D.Yield arr s1 ->
+                go SPEC ps s1 (singleDLL arr) 0 (Array.length arr)
+            D.Skip s1 -> goInit SPEC ps s1
+            D.Stop -> do
+                b <- pextract ps
+                return (b, Generate.nil)
+
+    goBreak !_ ps s dl i imax
+        | i < 0 =
+            let dl1 = previousDLL dl
+                arr = currentDLL dl1
+                len = Array.length arr
+             in goBreak SPEC ps s dl1 (len + i) len
+        | otherwise = go SPEC ps s (dropLDLL dl) i imax
+
+    go !_ ps s dl i imax
+        | i == imax = do
+            res <- step defState s
+            case res of
+                D.Yield arr s1 -> do
+                    let dl1 = nextDLL (insertDLL arr dl)
+                        crr = currentDLL dl1
+                    go SPEC ps s1 dl1 0 (Array.length crr)
+                D.Skip s1 -> go SPEC ps s1 dl i imax
+                D.Stop -> do
+                    b <- pextract ps
+                    return (b, Generate.nil)
+        | i < 0 =
+            let dl1 = previousDLL dl
+                arr = currentDLL dl1
+                len = Array.length arr
+             in go SPEC ps s dl1 (len + i) len
+        | otherwise = do
+            let arr = currentDLL dl
+                i1 = i + 1
+            a <- liftIO $ Array.unsafeIndexIO arr i
+            pRes <- pstep ps a
+            case pRes of
+                PRD.Partial 0 ps1 -> go SPEC ps1 s (dropLDLL dl) i1 imax
+                PRD.Partial n ps1 -> goBreak SPEC ps1 s dl (i1 - n) imax
+                PRD.Continue 0 ps1 -> go SPEC ps1 s dl i1 imax
+                PRD.Continue n ps1 -> go SPEC ps1 s dl (i1 - n) imax
+                PRD.Done n b -> goFinal SPEC b s dl (i1 - n) imax
+                PRD.Error err -> error err
+
+    goFinal !_ b s dl i imax
+        | i == imax =
+            let br = bufferRDLL dl
+                streamL = Generate.fromList br
+                streamR = D.Stream step s
+             in return (b, Nesting.append streamL streamR)
+        | i < 0 =
+            let dl1 = previousDLL dl
+                arr = currentDLL dl1
+                len = Array.length arr
+             in goFinal SPEC b s dl1 (len + i) len
+        | otherwise = do
+            let (Array.Array fp end) = currentDLL dl
+                br = bufferRDLL dl
+                elemSize = sizeOf (undefined :: a)
+                newArr = Array.Array (fp `plusForeignPtr` (i * elemSize)) end
+                streamL = Generate.fromList (newArr : br)
+                streamR = D.Stream step s
+             in return (b, Nesting.append streamL streamR)
+
+-- | Parse an array stream using the supplied 'Parser'.
+--
+-- /Internal/
+--
+{-# INLINE_NORMAL parse #-}
+parse ::
+       (MonadIO m, Storable a)
+    => PRD.Parser m a b
+    -> SerialT m (A.Array a)
+    -> m (b, SerialT m (A.Array a))
+parse p s = fmap D.fromStreamD <$> parseD p (D.toStreamD s)

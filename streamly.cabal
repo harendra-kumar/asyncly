@@ -71,6 +71,7 @@ extra-source-files:
     benchmark/*.hs
     benchmark/README.md
     benchmark/Streamly/Benchmark/Data/*.hs
+    benchmark/Streamly/Benchmark/Data/Array/Stream/Foreign.hs
     benchmark/Streamly/Benchmark/Data/Parser/*.hs
     benchmark/Streamly/Benchmark/Data/Stream/*.hs
     benchmark/Streamly/Benchmark/FileSystem/*.hs
