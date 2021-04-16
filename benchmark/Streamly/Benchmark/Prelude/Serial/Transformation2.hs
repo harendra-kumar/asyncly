@@ -179,6 +179,10 @@ reverse' n = composeN n Internal.reverse'
 sortBy :: MonadIO m => Int -> SerialT m Int -> m ()
 sortBy n = composeN n (Internal.sortBy compare)
 
+{-# INLINE sortByD #-}
+sortByD :: MonadIO m => Int -> SerialT m Int -> m ()
+sortByD n = composeN n (Internal.sortByD compare)
+
 o_n_heap_buffering :: Int -> [Benchmark]
 o_n_heap_buffering value =
     [ bgroup "buffered"
@@ -187,6 +191,7 @@ o_n_heap_buffering value =
           benchIOSink value "reverse" (reverse 1)
         , benchIOSink value "reverse'" (reverse' 1)
         , benchIOSink value "sortBy" (sortBy 1)
+        , benchIOSink value "sortByD" (sortByD 1)
         , bench "sort Lists" $ nf (\x -> List.sort [1..x]) value
 
         , benchIOSink value "mkAsync" (mkAsync fromSerial)
