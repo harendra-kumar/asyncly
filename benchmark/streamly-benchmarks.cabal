@@ -186,7 +186,7 @@ benchmark Prelude.Serial
     buildable: False
   else
     buildable: True
-  if flag(limit-build-mem)
+  --if flag(limit-build-mem)
     ghc-options: +RTS -M2000M -RTS
 
 

@@ -167,6 +167,42 @@ o_1_space_grouping value =
 -- Size conserving transformations (reordering, buffering, etc.)
 -------------------------------------------------------------------------------
 
+{-# INLINE innerJoin #-}
+innerJoin :: MonadIO m => Int -> SerialT m Int -> m ()
+innerJoin n = composeNPair n  (Internal.innerJoin (==) (Internal.fromList [1..20]))
+
+{-# INLINE hashInnerJoin #-}
+hashInnerJoin :: MonadIO m => Int -> SerialT m Int -> m ()
+hashInnerJoin n = composeN n  (Internal.hashInnerJoin (Internal.fromList [1..20]))
+
+{-# INLINE mergeInnerJoin #-}
+mergeInnerJoin :: MonadIO m => Int -> SerialT m Int -> m ()
+mergeInnerJoin n = composeNPair n  (Internal.mergeInnerJoin compare (Internal.fromList [1..20]))
+
+{-# INLINE leftJoin #-}
+leftJoin :: MonadIO m => Int -> SerialT m Int -> m ()
+leftJoin n = composeNLeft n  (Internal.leftJoin (==) (Internal.fromList [1..20]))
+
+{-# INLINE mergeLeftJoin #-}
+mergeLeftJoin :: MonadIO m => Int -> SerialT m Int -> m ()
+mergeLeftJoin n = composeNLeft n  (Internal.mergeLeftJoin compare (Internal.fromList [1..20]))
+
+{-# INLINE outerJoin #-}
+outerJoin :: MonadIO m => Int -> SerialT m Int -> m ()
+outerJoin n = composeNOuter n  (Internal.outerJoin (==) (Internal.fromList [1..200]))
+
+{-# INLINE mergeOuterJoin #-}
+mergeOuterJoin :: (MonadIO m, S.MonadAsync m)=> Int -> SerialT m Int -> m ()
+mergeOuterJoin n = composeNOuter n  (Internal.mergeOuterJoin compare (Internal.fromList [1..200]))
+
+{-# INLINE mergeUnionBy #-}
+mergeUnionBy :: (MonadIO m, S.MonadAsync m)=> Int -> SerialT m Int -> m ()
+mergeUnionBy n = composeN n  (Internal.mergeUnionBy (==) (Internal.fromList [1..200]))
+
+{-# INLINE mergeDifferenceBy #-}
+mergeDifferenceBy :: (MonadIO m, S.MonadAsync m)=> Int -> SerialT m Int -> m ()
+mergeDifferenceBy n = composeN n  (Internal.mergeDifferenceBy (==) (Internal.fromList [1..20]))
+
 {-# INLINE reverse #-}
 reverse :: MonadIO m => Int -> SerialT m Int -> m ()
 reverse n = composeN n S.reverse
@@ -187,6 +223,14 @@ o_n_heap_buffering value =
           benchIOSink value "reverse" (reverse 1)
         , benchIOSink value "reverse'" (reverse' 1)
         , benchIOSink value "sortBy" (sortBy 1)
+        , benchIOSink value "innerJoin" (innerJoin 1)        
+        , benchIOSink value "leftJoin" (leftJoin 1)        
+        , benchIOSink value "outerJoin" (outerJoin 1)
+        , benchIOSink value "mergeLeftJoin" (mergeLeftJoin 1)
+        , benchIOSink value "mergeUnionBy" (mergeUnionBy 1)
+        , benchIOSink value "mergeInnerJoin" (mergeInnerJoin 1)
+        , benchIOSink value "mergeOuterJoin" (mergeOuterJoin 1)
+        --, benchIOSink value "mergeDifferenceBy" (mergeDifferenceBy 1)
         , bench "sort Lists" $ nf (\x -> List.sort [1..x]) value
 
         , benchIOSink value "mkAsync" (mkAsync fromSerial)

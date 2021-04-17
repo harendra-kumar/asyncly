@@ -74,6 +74,7 @@ module Streamly.Internal.Data.Stream.IsStream.Transform
     , uniq
     , uniqBy
     , nubBy
+    , nubByMerge
     , nubWindowBy
     , prune
     , repeated
@@ -758,7 +759,7 @@ scanl1' step m = fromStreamD $ D.scanl1' step $ toStreamD m
 with :: forall (t :: (Type -> Type) -> Type -> Type) m a b s. Functor (t m) =>
        (t m a -> t m (s, a))
     -> (((s, a) -> b) -> t m (s, a) -> t m (s, a))
-    -> (((s, a) -> b) -> t m a -> t m a)
+    -> ((s, a) -> b) -> t m a -> t m a
 with f comb g = fmap snd . comb g . f
 
 -- | Include only those elements that pass a predicate.
@@ -864,6 +865,11 @@ repeated = undefined
 nubBy :: -- (IsStream t, Monad m) =>
     (a -> a -> Bool) -> t m a -> t m a
 nubBy = undefined -- fromStreamD . D.nubBy . toStreamD
+
+{-# INLINE nubByMerge #-}
+nubByMerge :: (IsStream t, Monad m) =>
+    (a -> a -> Bool) -> t m a -> t m a
+nubByMerge eq = fromStreamD . D.nubByMerge eq . toStreamD
 
 -- | Drop repeated elements within the specified tumbling window in the stream.
 --
