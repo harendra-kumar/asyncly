@@ -707,7 +707,7 @@ serialWith func (Fold stepL initialL extractL) (Fold stepR initialR extractR) =
 
 {-# ANN type SerialRunner Fuse #-}
 data SerialRunner sL sR
-    = SerialLeft !sL 
+    = SerialLeft !sL
     | SerialRight !sR
 
 {-# INLINE serial_ #-}
@@ -723,28 +723,32 @@ serial_ (Fold stepL beginL _) (Fold stepR beginR doneR) =
         resR <- beginR
         return
             $ case resL of
-                  Partial sl -> Partial $ SerialLeft sl                         
-                  Done _ -> first SerialRight resR
+                Partial sl -> Partial $ SerialLeft sl
+                Done _ -> first SerialRight resR
 
     step (SerialLeft sL) a = do
         resL <- stepL sL a
         case resL of
-            Partial sL1 -> return $ Partial $ SerialLeft sL1                
+            Partial sL1 -> return $ Partial $ SerialLeft sL1
             Done _ -> do
                 resR <- beginR
                 case resR of
-                    Partial sr -> return $ Partial $ SerialRight sr  
-                    Done bR -> return $ Done bR    
+                    Partial sr -> return $ Partial $ SerialRight sr
+                    Done bR -> return $ Done bR
 
     step (SerialRight sR) a = do
         resR <- stepR sR a
         case resR of
-                  Partial sR1 -> return $ Partial $ SerialRight sR1
-                  Done bR -> return $ Done bR
+            Partial sR1 -> return $ Partial $ SerialRight sR1
+            Done bR -> return $ Done bR
 
-    done (SerialLeft _) = error "Done from left fold is invalid."
-       
-    done (SerialRight s) = doneR s     
+    done (SerialLeft _) = do
+        res <- beginR
+        case res of
+            Done b -> return b
+            Partial s -> doneR s
+
+    done (SerialRight s) = doneR s
 
 
 {-# ANN type GenericRunner Fuse #-}
@@ -863,26 +867,23 @@ teeWithFst f (Fold stepL beginL doneL) (Fold stepR beginR doneR) =
                 return
                     $ Partial
                     $ case resR of
-                          Partial sR1 -> RunBoth sL1 sR1
-                          Done bR -> RunLeft sL1 bR
+                        Partial sR1 -> RunBoth sL1 sR1
+                        Done bR -> RunLeft sL1 bR
             Done bL ->
                      case resR of
-                          Partial sR1 -> do
-                                br <- doneR sR1
-                                return $ Done $ f bL br
-                          Done bR -> return $ Done $ f bL bR
+                        Partial sR1 -> do
+                            br <- doneR sR1
+                            return $ Done $ f bL br
+                        Done bR -> return $ Done $ f bL bR
+
     step (RunLeft sL bR) a = do
         resL <- stepL sL a
         return
             $ case resL of
-                  Partial sL1 -> Partial $ RunLeft sL1 bR
-                  Done bL -> Done $ f bL bR
-    step (RunRight bL sR) a = do
-        resR <- stepR sR a
-        return
-            $ case resR of
-                  Partial sR1 -> Partial $ RunRight bL sR1
-                  Done bR -> Done $ f bL bR
+                Partial sL1 -> Partial $ RunLeft sL1 bR
+                Done bL -> Done $ f bL bR
+
+    step (RunRight _ _) _ = undefined
 
     done (RunBoth sL sR) = do
         bL <- doneL sL
@@ -913,11 +914,11 @@ teeWithMin f (Fold stepL beginL doneL) (Fold stepR beginR doneR) =
         case resL of
             Partial sL1 -> do
                 case resR of
-                    Partial sR1 -> return $ Partial $ RunBoth sL1 sR1   
+                    Partial sR1 -> return $ Partial $ RunBoth sL1 sR1
                     Done br -> do
                         bl <- doneL sL1
                         return $ Done $ f bl br
-                    
+
             Done bl -> do
                 case resR of
                     Partial sr -> do
@@ -941,26 +942,20 @@ teeWithMin f (Fold stepL beginL doneL) (Fold stepR beginR doneR) =
                         br <- doneR sR1
                         return $ Done $ f bL br
                     Done bR -> return $ Done $ f bL bR
-    step (RunLeft sL bR) a = do
-        resL <- stepL sL a
-        return
-            $ case resL of
-                Partial sL1 -> Partial $ RunLeft sL1 bR
-                Done bL -> Done $ f bL bR
-    step (RunRight bL sR) a = do
-        resR <- stepR sR a
-        return
-            $ case resR of
-                Partial sR1 -> Partial $ RunRight bL sR1
-                Done bR -> Done $ f bL bR
+
+    step (RunLeft _ _) _ = undefined
+
+    step (RunRight _ _) _ = undefined
 
     done (RunBoth sL sR) = do
         bL <- doneL sL
         bR <- doneR sR
         return $ f bL bR
+
     done (RunLeft sL bR) = do
         bL <- doneL sL
         return $ f bL bR
+
     done (RunRight bL sR) = do
         bR <- doneR sR
         return $ f bL bR
@@ -986,30 +981,28 @@ shortest (Fold stepL beginL doneL) (Fold stepR beginR _) =
             case resL of
                 Partial sl ->
                     case resR of
-                        Partial sr -> Partial $ RunBoth sl sr
+                        Partial sr -> Partial $ Tuple' sl sr
                         Done br -> Done br
                 Done bl -> Done bl
 
-    step (RunBoth sL sR) a = do
+    step (Tuple' sL sR) a = do
         resL <- stepL sL a
         resR <- stepR sR a
         return $
             case resL of
                 Partial sL1 ->
                     case resR of
-                        Partial sR1 -> Partial $ RunBoth sL1 sR1
+                        Partial sR1 -> Partial $ Tuple' sL1 sR1
                         Done bR -> Done bR
-                Done bL -> Done bL
+                Done bL -> Done bL   
 
-    step (RunLeft _ _) _ = error "Invalid RunLeft option"
+    done (Tuple' _ _) = undefined 
 
-    step (RunRight _ _) _ = error "Invalid RunRight option"
-
-    done (RunBoth sL _) = doneL sL -- which one to pick left or right?
-
-    done (RunLeft _ bR) = return bR
-
-    done (RunRight bL _) = return bL
+{-# ANN type LongestRunner Fuse #-}
+data LongestRunner sL sR bL bR
+    = LongestRunBoth !sL !sR
+    | LongestRunLeft !sL !bR
+    | LongestRunRight !bL !sR    
 
 -- | Longest alternative. Apply both folds in parallel but choose the result
 -- from the one which consumed more input i.e. take the longest succeeding
@@ -1033,11 +1026,11 @@ longest (Fold stepL beginL doneL) (Fold stepR beginR doneR) =
                     Partial sl ->
                         Partial
                             $ case resR of
-                                Partial sr -> RunBoth sl sr
-                                Done br -> RunLeft sl br
-                    Done bl -> first (RunRight bl) resR
+                                Partial sr -> LongestRunBoth sl sr
+                                Done br -> LongestRunLeft sl br
+                    Done bl -> first (LongestRunRight bl) resR
 
-    step (RunBoth sL sR) a = do
+    step (LongestRunBoth sL sR) a = do
         resL <- stepL sL a
         resR <- stepR sR a
         case resL of
@@ -1045,32 +1038,32 @@ longest (Fold stepL beginL doneL) (Fold stepR beginR doneR) =
                 return
                     $ Partial
                     $ case resR of
-                        Partial sR1 -> RunBoth sL1 sR1
-                        Done bR -> RunLeft sL1 bR
+                        Partial sR1 -> LongestRunBoth sL1 sR1
+                        Done bR -> LongestRunLeft sL1 bR
             Done bL ->
                 return
                     $ case resR of
-                        Partial sR1 -> Partial $ RunRight bL sR1
+                        Partial sR1 -> Partial $ LongestRunRight bL sR1
                         Done bR -> Done bR
-    step (RunLeft sL bR) a = do
+    step (LongestRunLeft sL bR) a = do
         resL <- stepL sL a
         return
             $ case resL of
-                Partial sL1 -> Partial $ RunLeft sL1 bR
+                Partial sL1 -> Partial $ LongestRunLeft sL1 bR
                 Done bL -> Done bL
-    step (RunRight bL sR) a = do
+    step (LongestRunRight bL sR) a = do
         resR <- stepR sR a
         return
             $ case resR of
-                Partial sR1 -> Partial $ RunRight bL sR1
+                Partial sR1 -> Partial $ LongestRunRight bL sR1
                 Done bR -> Done bR
 
     --done (RunBoth sL sR) = do -- which one to pick ?
-    done (RunBoth sL _) = doneL sL
+    done (LongestRunBoth _ _) = undefined
 
-    done (RunLeft sL _) = doneL sL
-    
-    done (RunRight _ sR) = doneR sR
+    done (LongestRunLeft sL _) = doneL sL
+
+    done (LongestRunRight _ sR) = doneR sR
 
 data ConcatMapState m sa a c
     = B !sa
