@@ -459,7 +459,9 @@ partitionByM =
 
     action ls = do
         let f = \x -> if odd x then return (Left x) else return (Right x)
-        v1 <- run $ S.fold (F.partitionByM f FL.length FL.length) $ S.fromList ls
+        v1 <- run 
+            $ S.fold (F.partitionByM f FL.length FL.length) 
+            $ S.fromList ls
         let v2 = foldl (\b a -> if odd a then b+1 else b) 0 ls
             v3 = foldl (\b a -> if even a then b+1 else b) 0 ls
         assert (v1 == (v2, v3))
@@ -474,8 +476,8 @@ partitionBy =
     action ls = do
         let f = \x -> if odd x then Left x else Right x
         v1 <- run
-                $ S.fold (F.partitionBy f FL.length FL.length)
-                $ S.fromList ls
+            $ S.fold (F.partitionBy f FL.length FL.length)
+            $ S.fromList ls
         let v2 = foldl (\b a -> if odd a then b+1 else b) 0 ls
             v3 = foldl (\b a -> if even a then b+1 else b) 0 ls
         assert (v1 == (v2, v3))
