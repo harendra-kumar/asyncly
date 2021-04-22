@@ -16,6 +16,7 @@ import Test.QuickCheck
     )
 import Test.QuickCheck.Monadic (monadicIO, assert, run)
 
+import qualified Data.Map
 import qualified Prelude
 import qualified Streamly.Internal.Data.Fold as F
 import qualified Streamly.Prelude as S
@@ -53,7 +54,8 @@ rollingHashFirstN :: Property
 rollingHashFirstN =
     forAll (choose (0, maxStreamLen)) $ \len ->
         forAll (choose (0, len)) $ \n ->
-            forAll (vectorOf len (arbitrary :: Gen Int)) $ \vec -> monadicIO $ do
+            forAll (vectorOf len (arbitrary :: Gen Int)) $ \vec ->
+                monadicIO $ do
                 a <- run $ S.fold F.rollingHash $ S.take n $ S.fromList vec
                 b <- run $ S.fold (F.rollingHashFirstN n) $ S.fromList vec
                 assert $ a == b
@@ -109,6 +111,9 @@ minimum genmax ls =
 
 toList :: [Int] -> Expectation
 toList ls = S.fold FL.toList (S.fromList ls) `shouldReturn` ls
+
+toListRev :: [Int] -> Expectation
+toListRev ls = S.fold FL.toListRev (S.fromList ls) `shouldReturn` reverse ls
 
 safeLast :: [a] -> Maybe a
 safeLast [] = Nothing
@@ -179,7 +184,8 @@ elemIndex elm ls = do
             let fld = S.fold (FL.any (== elm)) (S.fromList ls)
             in fld `shouldReturn` False
         Just idx ->
-            let fld = S.fold (FL.any (== elm)) (S.fromList $ Prelude.take idx ls)
+            let fld = S.fold (FL.any (== elm))
+                        (S.fromList $ Prelude.take idx ls)
             in fld `shouldReturn` False
 
 null :: [Int] -> Expectation
@@ -444,6 +450,133 @@ headAndRest ls = monadicIO $ do
     taill [] = []
     taill (_:xs) = xs
 
+partitionByM :: Property
+partitionByM =
+    forAll (listOf1 (chooseInt (intMin, intMax)))
+        $ \ls0 -> monadicIO $ action ls0
+
+    where
+
+    action ls = do
+        let f = \x -> if odd x then return (Left x) else return (Right x)
+        v1 <- run $ S.fold (F.partitionByM f FL.length FL.length) $ S.fromList ls
+        let v2 = foldl (\b a -> if odd a then b+1 else b) 0 ls
+            v3 = foldl (\b a -> if even a then b+1 else b) 0 ls
+        assert (v1 == (v2, v3))
+
+partitionBy :: Property
+partitionBy =
+    forAll (listOf1 (chooseInt (intMin, intMax)))
+        $ \ls0 -> monadicIO $ action ls0
+
+    where
+
+    action ls = do
+        let f = \x -> if odd x then Left x else Right x
+        v1 <- run
+                $ S.fold (F.partitionBy f FL.length FL.length)
+                $ S.fromList ls
+        let v2 = foldl (\b a -> if odd a then b+1 else b) 0 ls
+            v3 = foldl (\b a -> if even a then b+1 else b) 0 ls
+        assert (v1 == (v2, v3))
+
+demux :: Expectation
+demux =
+    let table = Data.Map.fromList [("SUM", F.sum), ("PRODUCT", F.product)]
+        input = Stream.fromList
+                [ ("SUM", 1::Int)
+                , ("PRODUCT", 2::Int)
+                , ("SUM",3)
+                , ("PRODUCT", 4::Int)
+                ]
+    in Stream.fold (F.demux table) input
+        `shouldReturn`
+        Data.Map.fromList [("PRODUCT", 8),("SUM", 4)]
+
+
+demuxWithSum :: Expectation
+demuxWithSum =
+    let f x = ("SUM", x::Int)
+        table = Data.Map.fromList [("SUM", F.sum)]
+        input = Stream.fromList [1, 4]
+
+    in Stream.fold (F.demuxWith f table) input
+        `shouldReturn`
+        Data.Map.fromList [("SUM", 5)]
+
+demuxWithProduct :: Expectation
+demuxWithProduct =
+    let f x = ("PRODUCT", x::Int)
+        table = Data.Map.fromList [("PRODUCT", F.product)]
+        input = Stream.fromList [2, 4]
+
+    in Stream.fold (F.demuxWith f table) input
+        `shouldReturn`
+        Data.Map.fromList [("PRODUCT", 8)]
+
+demuxDefaultWithSum :: Expectation
+demuxDefaultWithSum =
+    let f x = ("PRODUCT", x::Int)
+        table = Data.Map.fromList [("PRODUCT", FL.product)]
+        input = Stream.fromList [2, 4]
+
+    in Stream.fold (F.demuxDefaultWith f table (F.map snd FL.sum)) input
+        `shouldReturn`
+        (Data.Map.fromList [("PRODUCT" , 8)] , 0)
+
+demuxDefaultWithProduct :: Expectation
+demuxDefaultWithProduct =
+    let f x = ("PRODUCT", x::Int)
+        table = Data.Map.fromList [("PRODUCT", FL.product)]
+        input = Stream.fromList [2, 4]
+
+    in Stream.fold (F.demuxDefaultWith f table (F.map snd FL.product)) input
+        `shouldReturn`
+        (Data.Map.fromList [("PRODUCT" , 8)] , 1)
+
+demuxDefault :: Expectation
+demuxDefault =
+    let table =  Data.Map.fromList [("SUM", F.sum), ("PRODUCT", F.product)]
+        input = Stream.fromList
+            [ ("SUM", 1::Int)
+            , ("PRODUCT", 2::Int)
+            , ("SUM",3)
+            , ("PRODUCT", 4::Int)
+            ]
+    in Stream.fold (F.demuxDefault table (F.map snd FL.product)) input
+        `shouldReturn`
+        (Data.Map.fromList [("PRODUCT", 8), ("SUM", 4)], 1)
+
+classifyWith :: Expectation
+classifyWith =
+    let input = Stream.fromList [("ONE",1),("ONE",1.1),("TWO",2), ("TWO",2.2)]
+    in Stream.fold (F.classifyWith fst (F.map snd F.toList)) input
+        `shouldReturn`
+        Data.Map.fromList [("ONE",[1.0, 1.1 :: Double]), ("TWO",[2.0, 2.2])]
+
+classify :: Expectation
+classify =
+    let input =
+            Stream.fromList
+            [
+              ("ONE", (1::Int, 1))
+            , ("ONE", (1, 1.1:: Double))
+            , ("TWO", (2, 2))
+            , ("TWO",(2, 2.2))
+            ]
+    in Stream.fold (F.classify (F.map snd F.toList)) input
+        `shouldReturn`
+        Data.Map.fromList [("ONE",[1.0, 1.1 :: Double]), ("TWO",[2.0, 2.2])]
+
+splitAt :: Expectation
+splitAt =
+    Stream.fold
+    (F.splitAt 6 F.toList F.toList)
+    (Stream.fromList "Hello World!")
+    `shouldReturn` ("Hello ","World!")
+
+
+
 moduleName :: String
 moduleName = "Data.Fold"
 
@@ -472,6 +605,15 @@ main = hspec $ do
         prop "rollingHashFirstN" rollingHashFirstN
 
         prop "toList" toList
+        prop "toListRev" toListRev
+        prop "demux" demux
+        prop "demuxWithSum" demuxWithSum
+        prop "demuxWithProduct" demuxWithProduct
+        prop "demuxDefaultWithSum" demuxDefaultWithSum
+        prop "demuxDefaultWithProduct" demuxDefaultWithProduct
+        prop "demuxDefault" demuxDefault
+        prop "classifyWith" classifyWith
+        prop "classify" classify
 
         -- Terminating folds
         prop "index" index
@@ -518,9 +660,12 @@ main = hspec $ do
 
         -- Partitioning
         prop "partition" Main.partition
+        prop "partitionBy" partitionBy
+        prop "partitionByM" partitionByM
 
         -- Unzipping
         prop "unzip" Main.unzip
+        prop "splitAt" Main.splitAt
 
         -- Nesting
         prop "many" Main.many
