@@ -29,6 +29,8 @@ module Streamly.Internal.Data.Array.Foreign.Type
     , fromCString#
     , fromList
     , fromListN
+    , fromListRev
+    , fromListRevN
     , fromStreamDN
     , fromStreamD
 
@@ -299,12 +301,34 @@ fromCString# addr# = do
 fromListN :: Storable a => Int -> [a] -> Array a
 fromListN n xs = unsafeFreeze $ MA.fromListN n xs
 
+-- XXX We can possibly have a direction flag in the array to reverse it without
+-- actually doing anything. With that we can just do "reverse . fromList". But
+-- it may complicate all the APIs as all reads of the array will have to handle
+-- the flag.
+--
+-- | Create an 'Array' from the first N elements of a list in reverse order.
+-- The array is allocated to size N, if the list terminates before N elements
+-- then the array may hold less than N elements.
+--
+-- /Unimplemented/
+{-# INLINABLE fromListRevN #-}
+fromListRevN :: {- Storable a => -} Int -> [a] -> Array a
+fromListRevN _n _xs = undefined
+
 -- | Create an 'Array' from a list. The list must be of finite size.
 --
 -- @since 0.7.0
 {-# INLINABLE fromList #-}
 fromList :: Storable a => [a] -> Array a
 fromList xs = unsafeFreeze $ MA.fromList xs
+
+-- | Create an 'Array' from a list in reverse order. The list must be of finite
+-- size.
+--
+-- /Unimplemented/
+{-# INLINABLE fromListRev #-}
+fromListRev :: {- Storable a => -} [a] -> Array a
+fromListRev _xs = undefined
 
 {-# INLINE_NORMAL fromStreamDN #-}
 fromStreamDN :: forall m a. (MonadIO m, Storable a)
