@@ -222,6 +222,11 @@ test-suite Data.Array.Foreign
   main-is: Streamly/Test/Data/Array/Foreign.hs
   ghc-options: -main-is Streamly.Test.Data.Array.Foreign.main
 
+test-suite Data.Array.Stream.Foreign
+  import: test-options
+  type: exitcode-stdio-1.0
+  main-is: Streamly/Test/Data/Array/Stream/Foreign.hs
+
 test-suite Data.Fold
   import: test-options
   type: exitcode-stdio-1.0
