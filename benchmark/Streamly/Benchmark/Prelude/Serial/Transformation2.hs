@@ -231,7 +231,7 @@ o_n_heap_buffering value =
         , benchIOSink value "mergeUnionBy" (mergeUnionBy 1)
         , benchIOSink value "mergeInnerJoin" (mergeInnerJoin 1)
         , benchIOSink value "mergeOuterJoin" (mergeOuterJoin 1)
-        --, benchIOSink value "mergeDifferenceBy" (mergeDifferenceBy 1)
+        , benchIOSink value "mergeDifferenceBy" (mergeDifferenceBy 1)
         , bench "sort Lists" $ nf (\x -> List.sort [1..x]) value
 
         , benchIOSink value "mkAsync" (mkAsync fromSerial)
