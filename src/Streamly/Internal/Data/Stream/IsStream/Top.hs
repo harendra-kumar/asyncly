@@ -56,7 +56,7 @@ import Control.Monad.Trans.State.Strict (get, put)
 
 import Data.IORef (newIORef, readIORef, modifyIORef')
 import Data.Kind (Type)
-#if __GLASGOW_HASKELL__ < 808
+#if !(MIN_VERSION_base(4,11,0))
 import Data.Semigroup (Semigroup(..))
 #endif
 import Streamly.Internal.Data.SVar (MonadAsync)
@@ -469,20 +469,24 @@ outerJoin eq s1 s =
 --
 -- /Pre-release/
 {-# INLINE hashOuterJoin #-}
-hashOuterJoin :: (IsStream t, Ord a, Monad (t m), MonadAsync m) =>
+hashOuterJoin :: (IsStream t, Ord a, Monad (t m), MonadAsync m , Semigroup (t m (Maybe a, Maybe a))) =>
     t m a -> t m a -> t m (Maybe a, Maybe a)
 hashOuterJoin s1 s2 =
     Stream.concatM $ do
-        l1 <- StreamK.toList $ fmap (, ()) s1
-        l2 <- StreamK.toList $ fmap (, ()) s2
+        m1 <- Stream.fold (Fold.classify Fold.toList) 
+            $ StreamK.adapt 
+            $ fmap (, ()) s1
+        m2 <- Stream.fold (Fold.classify Fold.toList) 
+            $ StreamK.adapt 
+            $ fmap (, ()) s2
         let res1 = do
                 e <- s1
-                if e `Map.member` Map.fromList l2
+                if e `Map.member` m2
                 then  return (Just e, Just e)
                 else  return (Just e, Nothing)
         let res2 = do
                 e <- s2
-                if e `Map.member` Map.fromList l1
+                if e `Map.member` m1
                 then  StreamK.nil
                 else  return (Nothing, Just e)
         return $ res1 <> res2
