@@ -56,7 +56,7 @@ import Control.Monad.Trans.State.Strict (get, put)
 
 import Data.IORef (newIORef, readIORef, modifyIORef')
 import Data.Kind (Type)
-#if !(MIN_VERSION_base(4,11,0))
+#if __GLASGOW_HASKELL__ < 808
 import Data.Semigroup (Semigroup(..))
 #endif
 import Streamly.Internal.Data.SVar (MonadAsync)
