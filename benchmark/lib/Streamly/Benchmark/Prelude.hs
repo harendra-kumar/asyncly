@@ -199,6 +199,42 @@ composeN n f =
         4 -> S.drain . f . S.adapt . f . S.adapt . f . S.adapt . f
         _ -> undefined
 
+{-# INLINE composeNPair #-}
+composeNPair ::
+        (Monad m)
+    => Int
+    -> (t m Int -> S.SerialT m (Int, Int))
+    -> t m Int
+    -> m ()
+composeNPair n f =
+    case n of
+        1 -> S.drain . f       
+        _ -> undefined        
+
+{-# INLINE composeNLeft #-}
+composeNLeft ::
+        (Monad m)
+    => Int
+    -> (t m Int -> S.SerialT m (Int, Maybe Int))
+    -> t m Int
+    -> m ()
+composeNLeft n f =
+    case n of
+        1 -> S.drain . f       
+        _ -> undefined          
+
+{-# INLINE composeNOuter #-}
+composeNOuter ::
+        (Monad m)
+    => Int
+    -> (t m Int -> S.SerialT m (Maybe Int, Maybe Int))
+    -> t m Int
+    -> m ()
+composeNOuter n f =
+    case n of
+        1 -> S.drain . f       
+        _ -> undefined  
+
 {-# INLINE fmapN #-}
 fmapN ::
        (S.IsStream t, S.MonadAsync m, Functor (t m))

@@ -44,7 +44,7 @@ module Streamly.Internal.Data.Stream.IsStream.Top
     , hashLeftJoin
     , outerJoin
     , mergeOuterJoin
-    , hashOuterJoin
+    , hashOuterJoin  
     )
 where
 
@@ -53,9 +53,10 @@ where
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State.Strict (get, put)
--- import Data.Hashable (Hashable)
+
 import Data.IORef (newIORef, readIORef, modifyIORef')
 import Data.Kind (Type)
+import Data.Maybe
 #if !(MIN_VERSION_base(4,11,0))
 import Data.Semigroup (Semigroup(..))
 #endif
@@ -67,6 +68,7 @@ import Streamly.Internal.Data.Stream.StreamK (IsStream)
 import Streamly.Internal.Data.Time.Units (NanoSecond64(..), toRelTime64)
 
 import qualified Data.List as List
+import qualified Data.Map.Strict as Map
 import qualified Streamly.Internal.Data.Array as Array
 import qualified Streamly.Internal.Data.Fold as Fold
 import qualified Streamly.Internal.Data.Stream.IsStream.Lift as Stream
@@ -285,11 +287,21 @@ innerJoin eq s1 s2 = do
 --
 -- Time: O(m + n)
 --
--- /Unimplemented/
+-- /Pre-release/
 {-# INLINE hashInnerJoin #-}
-hashInnerJoin :: -- Hashable b =>
-    (a -> b -> Bool) -> t m a -> t m b -> t m (a, b)
-hashInnerJoin = undefined
+hashInnerJoin :: (IsStream t, Monad m, Monad (t m), Ord k) =>
+    t m (k, a) -> t m (k, b) -> t m (k, a, b)
+hashInnerJoin s1 s2 =
+    Stream.concatM $ do
+        l2 <- Stream.fold (Fold.classify Fold.toList) 
+            $ StreamK.adapt s2
+        let res = do
+                (k, a) <- s1
+                let b =  k `Map.lookup` l2
+                if isJust b 
+                then  return (k, a, head (fromJust b))
+                else  StreamK.nil
+        return res        
 
 -- | Like 'innerJoin' but works only on sorted streams.
 --
@@ -297,10 +309,12 @@ hashInnerJoin = undefined
 --
 -- Time: O(m + n)
 --
--- /Unimplemented/
+-- /Pre-release/
 {-# INLINE mergeInnerJoin #-}
-mergeInnerJoin :: (a -> b -> Ordering) -> t m a -> t m b -> t m (a, b)
-mergeInnerJoin = undefined
+mergeInnerJoin :: forall (t :: (Type -> Type) -> Type -> Type) m a b.
+    (IsStream t, MonadIO m, Eq a, Eq b) =>
+    (a -> b -> Ordering) -> t m a -> t m b -> t m (a, b)
+mergeInnerJoin = Stream.innerJoinByMerge
 
 -- XXX We can do this concurrently.
 -- XXX If the second stream is sorted and passed as an Array or a seek capable
@@ -325,9 +339,9 @@ mergeInnerJoin = undefined
 --
 -- Time: O(m x n)
 --
--- /Unimplemented/
+-- /Pre-release/
 {-# INLINE leftJoin #-}
-leftJoin :: Monad m =>
+leftJoin :: ( Monad m) =>
     (a -> b -> Bool) -> SerialT m a -> SerialT m b -> SerialT m (a, Maybe b)
 leftJoin eq s1 s2 = Stream.evalStateT (return False) $ do
     a <- Stream.liftInner s1
@@ -356,11 +370,21 @@ leftJoin eq s1 s2 = Stream.evalStateT (return False) $ do
 --
 -- Time: O(m + n)
 --
--- /Unimplemented/
+-- /Pre-release/
 {-# INLINE hashLeftJoin #-}
-hashLeftJoin :: -- Hashable b =>
-    (a -> b -> Bool) -> t m a -> t m b -> t m (a, Maybe b)
-hashLeftJoin = undefined
+hashLeftJoin ::  (IsStream t, Ord a, Monad m, Monad (t m)) =>
+    t m a -> t m a -> t m (a, Maybe a)
+hashLeftJoin  s1 s2 =
+    Stream.concatM $ do
+        l2 <- Stream.fold (Fold.classify Fold.toList) 
+            $ StreamK.adapt 
+            $ fmap (, ()) s2
+        let res = do
+                e <- s1
+                if e `Map.member` l2
+                then  return (e, Just e)
+                else  return (e, Nothing)
+        return res
 
 -- | Like 'leftJoin' but works only on sorted streams.
 --
@@ -368,11 +392,12 @@ hashLeftJoin = undefined
 --
 -- Time: O(m + n)
 --
--- /Unimplemented/
+-- /Pre-release/
 {-# INLINE mergeLeftJoin #-}
-mergeLeftJoin :: -- Monad m =>
+mergeLeftJoin :: forall (t :: (Type -> Type) -> Type -> Type) m a b.
+    (IsStream t, MonadIO m, Eq a, Eq b) =>
     (a -> b -> Ordering) -> t m a -> t m b -> t m (a, Maybe b)
-mergeLeftJoin _eq _s1 _s2 = undefined
+mergeLeftJoin  = Stream.leftJoinByMerge
 
 -- XXX We can do this concurrently.
 --
@@ -387,7 +412,7 @@ mergeLeftJoin _eq _s1 _s2 = undefined
 --
 -- Time: O(m x n)
 --
--- /Unimplemented/
+-- /Pre-release/
 {-# INLINE outerJoin #-}
 outerJoin :: MonadIO m =>
        (a -> b -> Bool)
@@ -443,11 +468,29 @@ outerJoin eq s1 s =
 --
 -- Time: O(m + n)
 --
--- /Unimplemented/
+-- /Pre-release/
 {-# INLINE hashOuterJoin #-}
-hashOuterJoin :: -- (Monad m, Hashable b) =>
-    (a -> b -> Ordering) -> t m a -> t m b -> t m (Maybe a, Maybe b)
-hashOuterJoin _eq _s1 _s2 = undefined
+hashOuterJoin :: (IsStream t, Ord a, Monad (t m), MonadAsync m , Semigroup (t m (Maybe a, Maybe a))) =>
+    t m a -> t m a -> t m (Maybe a, Maybe a)
+hashOuterJoin s1 s2 =
+    Stream.concatM $ do
+        m1 <- Stream.fold (Fold.classify Fold.toList) 
+            $ StreamK.adapt 
+            $ fmap (, ()) s1
+        m2 <- Stream.fold (Fold.classify Fold.toList) 
+            $ StreamK.adapt 
+            $ fmap (, ()) s2
+        let res1 = do
+                e <- s1
+                if e `Map.member` m2
+                then  return (Just e, Just e)
+                else  return (Just e, Nothing)
+        let res2 = do
+                e <- s2
+                if e `Map.member` m1
+                then  StreamK.nil
+                else  return (Nothing, Just e)
+        return $ res1 <> res2
 
 -- | Like 'outerJoin' but works only on sorted streams.
 --
@@ -455,11 +498,13 @@ hashOuterJoin _eq _s1 _s2 = undefined
 --
 -- Time: O(m + n)
 --
--- /Unimplemented/
+-- /Pre-release/
 {-# INLINE mergeOuterJoin #-}
-mergeOuterJoin :: -- Monad m =>
+mergeOuterJoin :: forall (t :: (Type -> Type) -> Type -> Type) m a b.
+    (IsStream t, MonadAsync m, Eq a, Eq b) =>
     (a -> b -> Ordering) -> t m a -> t m b -> t m (Maybe a, Maybe b)
-mergeOuterJoin _eq _s1 _s2 = undefined
+mergeOuterJoin = Stream.outerJoinByMerge
+
 
 ------------------------------------------------------------------------------
 -- Set operations (special joins)
@@ -505,11 +550,11 @@ intersectBy eq s1 s2 =
 --
 -- Time: O(m+n)
 --
--- /Unimplemented/
+-- /Pre-release/
 {-# INLINE mergeIntersectBy #-}
-mergeIntersectBy :: -- (IsStream t, Monad m) =>
+mergeIntersectBy :: (IsStream t, MonadIO m, Eq a) =>
     (a -> a -> Ordering) -> t m a -> t m a -> t m a
-mergeIntersectBy _eq _s1 _s2 = undefined
+mergeIntersectBy = Stream.intersectByMerge
 
 -- Roughly leftJoin s1 s2 = s1 `difference` s2 + s1 `intersection` s2
 
@@ -553,11 +598,11 @@ differenceBy eq s1 s2 =
 --
 -- Space: O(1)
 --
--- /Unimplemented/
+-- /Pre-release/
 {-# INLINE mergeDifferenceBy #-}
-mergeDifferenceBy :: -- (IsStream t, Monad m) =>
+mergeDifferenceBy :: (IsStream t, MonadIO m) =>
     (a -> a -> Ordering) -> t m a -> t m a -> t m a
-mergeDifferenceBy _eq _s1 _s2 = undefined
+mergeDifferenceBy = Stream.differenceByMerge
 
 -- | This is essentially an append operation that appends all the extra
 -- occurrences of elements from the second stream that are not already present
@@ -601,8 +646,8 @@ unionBy eq s1 s2 =
 --
 -- Space: O(1)
 --
--- /Unimplemented/
+-- /Pre-release/
 {-# INLINE mergeUnionBy #-}
-mergeUnionBy :: -- (IsStream t, Monad m) =>
+mergeUnionBy :: (IsStream t, MonadAsync m, Semigroup (t m a)) =>
     (a -> a -> Ordering) -> t m a -> t m a -> t m a
-mergeUnionBy _eq _s1 _s2 = undefined
+mergeUnionBy eq s1 s2 = s1 <> Stream.removeDupsRight eq s1 s2

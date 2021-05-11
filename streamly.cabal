@@ -527,6 +527,8 @@ library
                      , transformers      >= 0.4   && < 0.6
 
                      , heaps             >= 0.3     && < 0.5
+                     , hashable          >= 1.3.0.0 && < 1.3.0.1
+                     , unordered-containers >= 0.2.13.0 && < 0.2.13.1
 
                     -- concurrency
                      , atomic-primops    >= 0.8   && < 0.9

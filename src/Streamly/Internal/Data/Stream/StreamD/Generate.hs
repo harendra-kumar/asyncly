@@ -67,6 +67,7 @@ module Streamly.Internal.Data.Stream.StreamD.Generate
     , fromIndicesM
     , generate
     , generateM
+    , nubByMerge
 
     -- * Iteration
     , iterate
@@ -403,3 +404,24 @@ fromListM = Stream step
     {-# INLINE_LATE step #-}
     step _ (m:ms) = m >>= \x -> return $ Yield x ms
     step _ []     = return Stop
+
+{-# INLINE_NORMAL nubByMerge #-}
+nubByMerge :: (Monad m) => (a -> a -> Bool) -> Stream m a -> Stream m a
+nubByMerge eq (Stream stepa sa) = Stream step (sa, Nothing)
+    where
+    step gst (s, Nothing) = do
+        ret <-  stepa (adaptState gst)  s
+        return $ case ret of
+            Stop    -> Stop
+            Skip s' -> Skip (s', Nothing)
+            Yield a s' -> Yield a (s', Just a)
+
+    step gst (s, Just a1) = do
+        ret <-  stepa (adaptState gst)  s
+        return $ case ret of
+            Stop    -> Stop
+            Skip s' -> Skip (s', Nothing)
+            Yield a s' ->
+                if a `eq` a1
+                then Skip (s', Just a)
+                else Yield a (s', Just a)
