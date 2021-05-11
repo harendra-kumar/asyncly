@@ -197,7 +197,7 @@ mergeOuterJoin n = composeNOuter n  (Internal.mergeOuterJoin compare (Internal.f
 
 {-# INLINE mergeUnionBy #-}
 mergeUnionBy :: (MonadIO m, S.MonadAsync m)=> Int -> SerialT m Int -> m ()
-mergeUnionBy n = composeN n  (Internal.mergeUnionBy (==) (Internal.fromList [1..200]))
+mergeUnionBy n = composeN n  (Internal.mergeUnionBy compare (Internal.fromList [1..200]))
 
 {-# INLINE mergeDifferenceBy #-}
 mergeDifferenceBy :: (MonadIO m, S.MonadAsync m)=> Int -> SerialT m Int -> m ()
