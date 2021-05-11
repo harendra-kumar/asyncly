@@ -56,6 +56,7 @@ import Control.Monad.Trans.State.Strict (get, put)
 
 import Data.IORef (newIORef, readIORef, modifyIORef')
 import Data.Kind (Type)
+import Data.Maybe
 #if !(MIN_VERSION_base(4,11,0))
 import Data.Semigroup (Semigroup(..))
 #endif
@@ -286,19 +287,19 @@ innerJoin eq s1 s2 = do
 --
 -- Time: O(m + n)
 --
-
+-- /Pre-release/
 {-# INLINE hashInnerJoin #-}
-hashInnerJoin :: (IsStream t, Ord a,  Monad m, Monad (t m)) =>
-    t m a -> t m a -> t m a
+hashInnerJoin :: (IsStream t, Monad m, Monad (t m), Ord k) =>
+    t m (k, a) -> t m (k, b) -> t m (k, a, b)
 hashInnerJoin s1 s2 =
     Stream.concatM $ do
         l2 <- Stream.fold (Fold.classify Fold.toList) 
-            $ StreamK.adapt 
-            $ fmap (, ()) s2
+            $ StreamK.adapt s2
         let res = do
-                e <- s1
-                if e `Map.member` l2
-                then  return e
+                (k, a) <- s1
+                let b =  k `Map.lookup` l2
+                if isJust b 
+                then  return (k, a, head (fromJust b))
                 else  StreamK.nil
         return res        
 
@@ -340,7 +341,7 @@ mergeInnerJoin = Stream.innerJoinByMerge
 --
 -- /Pre-release/
 {-# INLINE leftJoin #-}
-leftJoin :: ( MonadIO m) =>
+leftJoin :: ( Monad m) =>
     (a -> b -> Bool) -> SerialT m a -> SerialT m b -> SerialT m (a, Maybe b)
 leftJoin eq s1 s2 = Stream.evalStateT (return False) $ do
     a <- Stream.liftInner s1

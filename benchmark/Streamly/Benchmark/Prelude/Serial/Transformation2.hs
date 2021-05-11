@@ -171,9 +171,11 @@ o_1_space_grouping value =
 innerJoin :: MonadIO m => Int -> SerialT m Int -> m ()
 innerJoin n = composeNPair n  (Internal.innerJoin (==) (Internal.fromList [1..20]))
 
+{--
 {-# INLINE hashInnerJoin #-}
 hashInnerJoin :: MonadIO m => Int -> SerialT m Int -> m ()
 hashInnerJoin n = composeN n  (Internal.hashInnerJoin (Internal.fromList [1..20]))
+--}
 
 {-# INLINE mergeInnerJoin #-}
 mergeInnerJoin :: MonadIO m => Int -> SerialT m Int -> m ()
@@ -224,7 +226,7 @@ o_n_heap_buffering value =
         , benchIOSink value "reverse'" (reverse' 1)
         , benchIOSink value "sortBy" (sortBy 1)
         , benchIOSink value "innerJoin" (innerJoin 1) 
-        , benchIOSink value "innerJoinHash" (hashInnerJoin 1)          
+        --, benchIOSink value "innerJoinHash" (hashInnerJoin 1)          
         , benchIOSink value "leftJoin" (leftJoin 1)        
         , benchIOSink value "outerJoin" (outerJoin 1)
         , benchIOSink value "mergeLeftJoin" (mergeLeftJoin 1)
