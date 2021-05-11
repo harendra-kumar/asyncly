@@ -201,7 +201,7 @@ mergeUnionBy n = composeN n  (Internal.mergeUnionBy (==) (Internal.fromList [1..
 
 {-# INLINE mergeDifferenceBy #-}
 mergeDifferenceBy :: (MonadIO m, S.MonadAsync m)=> Int -> SerialT m Int -> m ()
-mergeDifferenceBy n = composeN n  (Internal.mergeDifferenceBy (==) (Internal.fromList [1..20]))
+mergeDifferenceBy n = composeN n  (Internal.mergeDifferenceBy compare (Internal.fromList [1..20]))
 
 {-# INLINE reverse #-}
 reverse :: MonadIO m => Int -> SerialT m Int -> m ()
