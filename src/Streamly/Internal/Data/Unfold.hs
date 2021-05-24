@@ -141,6 +141,7 @@ module Streamly.Internal.Data.Unfold
 
     -- ** Enumerations
     -- *** Enumerate Num
+    , Enumerable (..)
     , enumerateFromStepNum
     , numFrom
 
@@ -231,9 +232,14 @@ import Control.Monad ((>=>), when)
 import Control.Monad.Catch (MonadCatch)
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Trans.Control (MonadBaseControl, liftBaseOp_)
+import Data.Fixed
 import Data.IORef (newIORef, readIORef, mkWeakIORef, writeIORef)
+import Data.Int
+import Data.Ratio
+import Numeric.Natural
 import Data.Maybe (isNothing)
 import Data.Void (Void)
+import Data.Word
 import GHC.Types (SPEC(..))
 import Streamly.Internal.Data.Fold.Type (Fold(..))
 import Streamly.Internal.Data.IOFinalizer
@@ -748,7 +754,6 @@ dropWhile f = dropWhileM (return . f)
 ------------------------------------------------------------------------------
 -- Enumeration of Num
 ------------------------------------------------------------------------------
-
 -- | Generate an infinite stream starting from a starting value with increments
 -- of the given stride.  The implementation is numerically stable for floating
 -- point values.
@@ -801,6 +806,7 @@ enumerateFromToIntegral to =
 enumerateFromIntegral :: (Monad m, Integral a, Bounded a) => Unfold m a a
 enumerateFromIntegral = enumerateFromToIntegral maxBound
 
+
 ------------------------------------------------------------------------------
 -- Enumeration of Fractionals
 ------------------------------------------------------------------------------
@@ -813,6 +819,82 @@ enumerateFromIntegral = enumerateFromToIntegral maxBound
 enumerateFromToFractional :: (Monad m, Fractional a, Ord a) => a -> Unfold m a a
 enumerateFromToFractional to =
     takeWhile (<= to + 1 / 2) $ enumerateFromStepNum 1
+
+{-# INLINE_NORMAL enumerateFromFractional #-}
+enumerateFromFractional :: (Monad m, Fractional a) => Unfold m a a
+enumerateFromFractional =  enumerateFromStepNum 1    
+
+-------------------------------------------------------------------------------
+-- Enumerable type class
+-------------------------------------------------------------------------------
+class Enum a => Enumerable a where
+    enumerateFrom :: (Integral a, Monad m) => Unfold m a a
+    enumerateFromTo :: (Integral a, Monad m) => a -> Unfold m a a
+    
+-------------------------------------------------------------------------------
+-- Enumerable Instances
+-------------------------------------------------------------------------------
+--
+-- For Enum types smaller than or equal to Int size.
+#define ENUMERABLE_BOUNDED_SMALL(SMALL_TYPE)           \
+instance Enumerable SMALL_TYPE where {                 \
+    {-# INLINE enumerateFrom #-};                      \
+    enumerateFrom = undefined;                         \
+    {-# INLINE enumerateFromTo #-};                    \
+    enumerateFromTo = undefined }
+    
+    
+ENUMERABLE_BOUNDED_SMALL(())
+ENUMERABLE_BOUNDED_SMALL(Bool)
+ENUMERABLE_BOUNDED_SMALL(Ordering)
+ENUMERABLE_BOUNDED_SMALL(Char)
+
+-- For bounded Integral Enum types, may be larger than Int.
+#define ENUMERABLE_BOUNDED_INTEGRAL(INTEGRAL_TYPE)  \
+instance Enumerable INTEGRAL_TYPE where {           \
+    {-# INLINE enumerateFrom #-};                   \
+    enumerateFrom = enumerateFromIntegral;          \
+    {-# INLINE enumerateFromTo #-};                 \
+    enumerateFromTo = enumerateFromToIntegral }
+
+
+ENUMERABLE_BOUNDED_INTEGRAL(Int)
+ENUMERABLE_BOUNDED_INTEGRAL(Int8)
+ENUMERABLE_BOUNDED_INTEGRAL(Int16)
+ENUMERABLE_BOUNDED_INTEGRAL(Int32)
+ENUMERABLE_BOUNDED_INTEGRAL(Int64)
+ENUMERABLE_BOUNDED_INTEGRAL(Word)
+ENUMERABLE_BOUNDED_INTEGRAL(Word8)
+ENUMERABLE_BOUNDED_INTEGRAL(Word16)
+ENUMERABLE_BOUNDED_INTEGRAL(Word32)
+ENUMERABLE_BOUNDED_INTEGRAL(Word64)
+
+
+-- For unbounded Integral Enum types.
+#define ENUMERABLE_UNBOUNDED_INTEGRAL(INTEGRAL_TYPE)              \
+instance Enumerable INTEGRAL_TYPE where {                         \
+    {-# INLINE enumerateFrom #-};                                 \
+    enumerateFrom  = numFrom;                                     \
+    {-# INLINE enumerateFromTo #-};                               \
+    enumerateFromTo = enumerateFromToIntegral }
+
+ENUMERABLE_UNBOUNDED_INTEGRAL(Integer)
+ENUMERABLE_UNBOUNDED_INTEGRAL(Natural)
+
+
+#define ENUMERABLE_FRACTIONAL(FRACTIONAL_TYPE,CONSTRAINT)         \
+instance (CONSTRAINT) => Enumerable FRACTIONAL_TYPE where {       \
+    {-# INLINE enumerateFrom #-};                                 \
+    enumerateFrom = enumerateFromFractional;                      \
+    {-# INLINE enumerateFromTo #-};                               \
+    enumerateFromTo = enumerateFromToFractional }
+
+
+ENUMERABLE_FRACTIONAL(Float,)
+ENUMERABLE_FRACTIONAL(Double,)
+ENUMERABLE_FRACTIONAL((Fixed a),HasResolution a)
+ENUMERABLE_FRACTIONAL((Ratio a),Integral a)
+
 
 -------------------------------------------------------------------------------
 -- Generation from SVar
