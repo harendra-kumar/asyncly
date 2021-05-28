@@ -38,6 +38,7 @@ module Streamly.Internal.Unicode.Stream
     , encodeLatin1_
 
     -- ** UTF-8 Encoding
+    , readCharUtf8'
     , encodeUtf8
     , encodeUtf8'
     , encodeUtf8_
@@ -98,6 +99,7 @@ import Streamly.Internal.Data.Stream.IsStream (IsStream)
 import Streamly.Internal.Data.Stream.Serial (SerialT)
 import Streamly.Internal.Data.Stream.StreamD (Stream(..), Step (..))
 import Streamly.Internal.Data.Tuple.Strict (Tuple'(..))
+import Streamly.Internal.Data.Unfold.Type (Unfold(..))
 
 import qualified Streamly.Internal.Data.Unfold as Unfold
 import qualified Streamly.Internal.Data.Stream.Serial as Serial
@@ -772,71 +774,28 @@ ord4 c = assert (n >= 0x10000)  (WCons x1 (WCons x2 (WCons x3 (WCons x4 WNil))))
     x3 = fromIntegral $ ((n `shiftR` 6) .&. 0x3F) + 0x80
     x4 = fromIntegral $ (n .&. 0x3F) + 0x80
 
-{-# ANN type EncodeState Fuse #-}
-data EncodeState s = EncodeState s !WList
-
-{-# ANN type InvalidAction Fuse #-}
-data InvalidAction =
-    DropInvalid | ErrorInvalid | IgnoreInvalid | ReplaceInvalid
-
-replaceInvalid :: s -> Step (EncodeState s) a
-replaceInvalid s =
-    Skip $ EncodeState s (WCons 239 (WCons 191 (WCons 189 WNil)))
-
-dropInvalid :: s -> Step (EncodeState s) a
-dropInvalid s = Skip (EncodeState s WNil)
-
-errorOnInvalid :: s -> Step (EncodeState s) a
-errorOnInvalid _ =
-    error $
-    show "Streamly.Internal.Data.Stream.StreamD.encodeUtf8:"
-    ++ "Encountered a surrogate"
-
-{-# INLINE_NORMAL encodeUtf8DGeneric #-}
-encodeUtf8DGeneric ::
-       Monad m
-    => InvalidAction
-    -> Stream m Char
-    -> Stream m Word8
-encodeUtf8DGeneric act (Stream step state) =
-    Stream step' (EncodeState state WNil)
+{-# INLINE_NORMAL readCharUtf8With #-}
+readCharUtf8With :: Monad m => WList -> Unfold m Char Word8
+readCharUtf8With surr = Unfold step inject
 
     where
 
-    {-# INLINE_LATE step' #-}
-    step' gst (EncodeState st WNil) = do
-        r <- step (adaptState gst) st
-        return $
-            case r of
-                Yield c s ->
-                    case ord c of
-                        x | x <= 0x7F ->
-                                Yield (fromIntegral x) (EncodeState s WNil)
-                            | x <= 0x7FF -> Skip (EncodeState s (ord2 c))
-                            | x <= 0xFFFF ->
-                                case act of
-                                    DropInvalid ->
-                                        if isSurrogate c
-                                        then dropInvalid s
-                                        else Skip (EncodeState s (ord3 c))
+    inject c =
+        return $ case ord c of
+            x | x <= 0x7F -> fromIntegral x `WCons` WNil
+              | x <= 0x7FF -> ord2 c
+              | x <= 0xFFFF -> if isSurrogate c then surr else ord3 c
+              | otherwise -> ord4 c
 
-                                    ErrorInvalid ->
-                                        if isSurrogate c
-                                        then errorOnInvalid s
-                                        else Skip (EncodeState s (ord3 c))
+    {-# INLINE_LATE step #-}
+    step WNil = return Stop
+    step (WCons x xs) = return $ Yield x xs
 
-                                    IgnoreInvalid ->
-                                        Skip (EncodeState s (ord3 c))
-
-                                    ReplaceInvalid ->
-                                        if isSurrogate c
-                                        then replaceInvalid s
-                                        else Skip (EncodeState s (ord3 c))
-
-                            | otherwise -> Skip (EncodeState s (ord4 c))
-                Skip s -> Skip (EncodeState s WNil)
-                Stop -> Stop
-    step' _ (EncodeState s (WCons x xs)) = return $ Yield x (EncodeState s xs)
+{-# INLINE_NORMAL readCharUtf8' #-}
+readCharUtf8' :: Monad m => Unfold m Char Word8
+readCharUtf8' =
+    readCharUtf8With $
+        error "Streamly.Internal.Unicode.readCharUtf8': Encountered a surrogate"
 
 -- More yield points improve performance, but I am not sure if they can cause
 -- too much code bloat or some trouble with fusion. So keeping only two yield
@@ -844,7 +803,7 @@ encodeUtf8DGeneric act (Stream step state) =
 -- paths (slow path).
 {-# INLINE_NORMAL encodeUtf8D' #-}
 encodeUtf8D' :: Monad m => Stream m Char -> Stream m Word8
-encodeUtf8D' = encodeUtf8DGeneric ErrorInvalid
+encodeUtf8D' = D.unfoldMany readCharUtf8'
 
 -- | Encode a stream of Unicode characters to a UTF-8 encoded bytestream. When
 -- any invalid character (U+D800-U+D8FF) is encountered in the input stream the
@@ -855,12 +814,16 @@ encodeUtf8D' = encodeUtf8DGeneric ErrorInvalid
 encodeUtf8' :: (Monad m, IsStream t) => t m Char -> t m Word8
 encodeUtf8' = D.fromStreamD . encodeUtf8D' . D.toStreamD
 
+{-# INLINE_NORMAL readCharUtf8 #-}
+readCharUtf8 :: Monad m => Unfold m Char Word8
+readCharUtf8 = readCharUtf8With $ WCons 239 (WCons 191 (WCons 189 WNil))
+
 -- | See section "3.9 Unicode Encoding Forms" in
 -- https://www.unicode.org/versions/Unicode13.0.0/UnicodeStandard-13.0.pdf
 --
 {-# INLINE_NORMAL encodeUtf8D #-}
 encodeUtf8D :: Monad m => Stream m Char -> Stream m Word8
-encodeUtf8D = encodeUtf8DGeneric ReplaceInvalid
+encodeUtf8D = D.unfoldMany readCharUtf8
 
 -- | Encode a stream of Unicode characters to a UTF-8 encoded bytestream. Any
 -- Invalid characters (U+D800-U+D8FF) in the input stream are replaced by the
@@ -873,9 +836,13 @@ encodeUtf8D = encodeUtf8DGeneric ReplaceInvalid
 encodeUtf8 :: (Monad m, IsStream t) => t m Char -> t m Word8
 encodeUtf8 = D.fromStreamD . encodeUtf8D . D.toStreamD
 
+{-# INLINE_NORMAL readCharUtf8_ #-}
+readCharUtf8_ :: Monad m => Unfold m Char Word8
+readCharUtf8_ = readCharUtf8With WNil
+
 {-# INLINE_NORMAL encodeUtf8D_ #-}
 encodeUtf8D_ :: Monad m => Stream m Char -> Stream m Word8
-encodeUtf8D_  = encodeUtf8DGeneric DropInvalid
+encodeUtf8D_ = D.unfoldMany readCharUtf8_
 
 -- | Encode a stream of Unicode characters to a UTF-8 encoded bytestream. Any
 -- Invalid characters (U+D800-U+D8FF) in the input stream are dropped.
