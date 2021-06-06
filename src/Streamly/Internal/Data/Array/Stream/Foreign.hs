@@ -22,11 +22,18 @@ module Streamly.Internal.Data.Array.Stream.Foreign
     , unlines
 
     -- * Elimination
+    -- ** Element Folds
     , fold
-    , fold_
-    -- , parse
+    , parse
     , parseD
-    , foldMany
+
+    -- ** Array Folds
+    , foldArr
+    , foldArr_
+    -- , parseArr
+    , parseArrD
+    , foldArrMany
+
     , toArray
 
     -- * Compaction
@@ -48,6 +55,9 @@ import Data.Bifunctor (second)
 import Control.Exception (assert)
 import Control.Monad.Catch (MonadThrow, throwM)
 import Control.Monad.IO.Class (MonadIO(..))
+#if __GLASGOW_HASKELL__ < 808
+import Data.Semigroup (Semigroup(..))
+#endif
 import Data.Word (Word8)
 import Foreign.ForeignPtr (withForeignPtr, touchForeignPtr)
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
@@ -313,7 +323,65 @@ splitOnSuffix byte s =
     D.fromStreamD $ D.splitInnerBySuffix (A.breakOn byte) A.spliceTwo $ D.toStreamD s
 
 -------------------------------------------------------------------------------
--- Elimination
+-- Elimination - Running folds
+-------------------------------------------------------------------------------
+
+-- XXX This should be written using CPS (as foldK) if we want it to scale wrt
+-- to the number of times it can be called on the same stream.
+--
+{-# INLINE_NORMAL foldD #-}
+foldD :: forall m a b. (MonadIO m, Storable a) =>
+    Fold m a b -> D.Stream m (Array a) -> m (b, D.Stream m (Array a))
+foldD (Fold fstep initial extract) stream@(D.Stream step state) = do
+    res <- initial
+    case res of
+        FL.Partial fs -> go SPEC state fs
+        FL.Done fb -> return $! (fb, stream)
+
+    where
+
+    {-# INLINE go #-}
+    go !_ st !fs = do
+        r <- step defState st
+        case r of
+            D.Yield (Array (ForeignPtr start contents) (Ptr end)) s ->
+                goArray SPEC s (ForeignPtr end contents) (Ptr start) fs
+            D.Skip s -> go SPEC s fs
+            D.Stop -> do
+                b <- extract fs
+                return (b, D.nil)
+
+    goArray !_ s fp@(ForeignPtr end _) !cur !fs
+        | cur == Ptr end = do
+            liftIO $ touchForeignPtr fp
+            go SPEC s fs
+    goArray !_ st fp@(ForeignPtr end contents) !cur !fs = do
+        x <- liftIO $ peek cur
+        res <- fstep fs x
+        let elemSize = sizeOf (undefined :: a)
+            next = cur `plusPtr` elemSize
+        case res of
+            FL.Done b -> do
+                let !(Ptr curAddr) = next
+                    arr = Array (ForeignPtr curAddr contents) (Ptr end)
+                return $! (b, D.cons arr (D.Stream step st))
+            FL.Partial fs1 -> goArray SPEC st fp next fs1
+
+-- | Fold an array stream using the supplied 'Fold'. Returns the fold result
+-- and the unconsumed stream.
+--
+-- /Internal/
+--
+{-# INLINE_NORMAL fold #-}
+fold ::
+       (MonadIO m, Storable a)
+    => FL.Fold m a b
+    -> SerialT m (A.Array a)
+    -> m (b, SerialT m (A.Array a))
+fold f s = fmap D.fromStreamD <$> foldD f (D.toStreamD s)
+
+-------------------------------------------------------------------------------
+-- Fold to a single Array
 -------------------------------------------------------------------------------
 
 -- When we have to take an array partially, take the last part of the array.
@@ -455,7 +523,7 @@ _toArraysOf n = FL.chunksOf n (A.writeNF n) FL.toStream
 -}
 
 -------------------------------------------------------------------------------
--- Parsing
+-- Elimination - running element parsers
 -------------------------------------------------------------------------------
 
 -- GHC parser does not accept {-# ANN type [] NoSpecConstr #-}, so we need
@@ -463,13 +531,117 @@ _toArraysOf n = FL.chunksOf n (A.writeNF n) FL.toStream
 {-# ANN type List NoSpecConstr #-}
 newtype List a = List {getList :: [a]}
 
+-- This can be generalized to any type provided it can be unfolded to a stream
+-- and it can be combined using a semigroup operation.
+--
+-- XXX This should be written using CPS (as parseK) if we want it to scale wrt
+-- to the number of times it can be called on the same stream.
 {-# INLINE_NORMAL parseD #-}
 parseD ::
+       forall m a b. (MonadIO m, MonadThrow m, Storable a)
+    => PRD.Parser m a b
+    -> D.Stream m (Array.Array a)
+    -> m (b, D.Stream m (Array.Array a))
+parseD (PRD.Parser pstep initial extract) stream@(D.Stream step state) = do
+    res <- initial
+    case res of
+        PRD.IPartial s -> go SPEC state (List []) s
+        PRD.IDone b -> return (b, stream)
+        PRD.IError err -> throwM $ ParseError err
+
+    where
+
+    -- "backBuf" contains last few items in the stream that we may have to
+    -- backtrack to.
+    --
+    -- XXX currently we are using a dumb list based approach for backtracking
+    -- buffer. This can be replaced by a sliding/ring buffer using Data.Array.
+    -- That will allow us more efficient random back and forth movement.
+    {-# INLINE go #-}
+    go !_ st backBuf !pst = do
+        r <- step defState st
+        case r of
+            D.Yield (Array (ForeignPtr start contents) (Ptr end)) s ->
+                gobuf SPEC s backBuf (ForeignPtr end contents) (Ptr start) pst
+            D.Skip s -> go SPEC s backBuf pst
+            D.Stop -> do
+                b <- extract pst
+                return (b, D.nil)
+
+    -- Use strictness on "cur" to keep it unboxed
+    gobuf !_ s backBuf fp@(ForeignPtr end _) !cur !pst
+        | cur == Ptr end = do
+            liftIO $ touchForeignPtr fp
+            go SPEC s backBuf pst
+    gobuf !_ s backBuf fp@(ForeignPtr end contents) !cur !pst = do
+        x <- liftIO $ peek cur
+        pRes <- pstep pst x
+        let elemSize = sizeOf (undefined :: a)
+            next = cur `plusPtr` elemSize
+        case pRes of
+            PR.Partial 0 pst1 ->
+                 gobuf SPEC s (List []) fp next pst1
+            PR.Partial n pst1 -> do
+                assert (n <= Prelude.length (x:getList backBuf)) (return ())
+                let src0 = Prelude.take n (x:getList backBuf)
+                    arr0 = A.fromListN n (Prelude.reverse src0)
+                    !(Ptr curAddr) = next
+                    arr1 = Array (ForeignPtr curAddr contents) (Ptr end)
+                    src = arr0 <> arr1
+                let !(Array (ForeignPtr start cont1) (Ptr end1)) = src
+                gobuf SPEC s (List []) (ForeignPtr end1 cont1) (Ptr start) pst1
+            PR.Continue 0 pst1 ->
+                gobuf SPEC s (List (x:getList backBuf)) fp next pst1
+            PR.Continue n pst1 -> do
+                assert (n <= Prelude.length (x:getList backBuf)) (return ())
+                let (src0, buf1) = splitAt n (x:getList backBuf)
+                    arr0 = A.fromListN n (Prelude.reverse src0)
+                    !(Ptr curAddr) = next
+                    arr1 = Array (ForeignPtr curAddr contents) (Ptr end)
+                    src = arr0 <> arr1
+                let !(Array (ForeignPtr start cont1) (Ptr end1)) = src
+                gobuf SPEC s (List buf1) (ForeignPtr end1 cont1) (Ptr start) pst1
+            PR.Done 0 b -> do
+                let !(Ptr curAddr) = next
+                    arr = Array (ForeignPtr curAddr contents) (Ptr end)
+                return (b, D.cons arr (D.Stream step s))
+            PR.Done n b -> do
+                assert (n <= Prelude.length (x:getList backBuf)) (return ())
+                let src0 = Prelude.take n (x:getList backBuf)
+                    -- XXX create the array in reverse instead
+                    arr0 = A.fromListN n (Prelude.reverse src0)
+                    !(Ptr curAddr) = next
+                    arr1 = Array (ForeignPtr curAddr contents) (Ptr end)
+                    -- XXX Use StreamK to avoid adding arbitrary layers of
+                    -- constructors every time.
+                    str = D.cons arr0 (D.cons arr1 (D.Stream step s))
+                return (b, str)
+            PR.Error err -> throwM $ ParseError err
+
+-- | Parse an array stream using the supplied 'Parser'.  Returns the parse
+-- result and the unconsumed stream. Throws 'ParseError' if the parse fails.
+--
+-- /Internal/
+--
+{-# INLINE_NORMAL parse #-}
+parse ::
+       (MonadIO m, MonadThrow m, Storable a)
+    => PRD.Parser m a b
+    -> SerialT m (A.Array a)
+    -> m (b, SerialT m (A.Array a))
+parse p s = fmap D.fromStreamD <$> parseD p (D.toStreamD s)
+
+-------------------------------------------------------------------------------
+-- Elimination - Running Array Folds and parsers
+-------------------------------------------------------------------------------
+
+{-# INLINE_NORMAL parseArrD #-}
+parseArrD ::
        forall m a b. (MonadIO m, MonadThrow m, Storable a)
     => PRD.Parser m (Array a) b
     -> D.Stream m (Array.Array a)
     -> m (b, D.Stream m (Array.Array a))
-parseD (PRD.Parser pstep initial extract) stream@(D.Stream step state) = do
+parseArrD (PRD.Parser pstep initial extract) stream@(D.Stream step state) = do
     res <- initial
     case res of
         PRD.IPartial s -> go SPEC state (List []) s
@@ -533,32 +705,32 @@ parseD (PRD.Parser pstep initial extract) stream@(D.Stream step state) = do
 --
 -- /Internal/
 --
-{-# INLINE parse #-}
-parse ::
+{-# INLINE parseArr #-}
+parseArr ::
        (MonadIO m, MonadThrow m, Storable a)
-    => PRD.Parser m a b
+    => ASF.Parser m a b
     -> SerialT m (A.Array a)
     -> m (b, SerialT m (A.Array a))
-parse p s = fmap D.fromStreamD <$> parseD p (D.toStreamD s)
+parseArr p s = fmap D.fromStreamD <$> parseD p (D.toStreamD s)
 -}
 
 -- | Fold an array stream using the supplied array stream 'Fold'.
 --
 -- /Pre-release/
 --
-{-# INLINE fold #-}
-fold :: (MonadIO m, MonadThrow m, Storable a) =>
+{-# INLINE foldArr #-}
+foldArr :: (MonadIO m, MonadThrow m, Storable a) =>
     ASF.Fold m a b -> SerialT m (A.Array a) -> m b
-fold (ASF.Fold p) s = fst <$> parseD p (D.toStreamD s)
+foldArr (ASF.Fold p) s = fst <$> parseArrD p (D.toStreamD s)
 
 -- | Like 'fold' but also returns the remaining stream.
 --
 -- /Pre-release/
 --
-{-# INLINE fold_ #-}
-fold_ :: (MonadIO m, MonadThrow m, Storable a) =>
+{-# INLINE foldArr_ #-}
+foldArr_ :: (MonadIO m, MonadThrow m, Storable a) =>
     ASF.Fold m a b -> SerialT m (A.Array a) -> m (b, SerialT m (A.Array a))
-fold_ (ASF.Fold p) s = second D.fromStreamD <$> parseD p (D.toStreamD s)
+foldArr_ (ASF.Fold p) s = second D.fromStreamD <$> parseArrD p (D.toStreamD s)
 
 {-# ANN type ParseChunksState Fuse #-}
 data ParseChunksState x inpBuf st pst =
@@ -568,13 +740,13 @@ data ParseChunksState x inpBuf st pst =
     | ParseChunksBuf inpBuf st inpBuf !pst
     | ParseChunksYield x (ParseChunksState x inpBuf st pst)
 
-{-# INLINE_NORMAL foldManyD #-}
-foldManyD
+{-# INLINE_NORMAL foldArrManyD #-}
+foldArrManyD
     :: (MonadThrow m, Storable a)
     => ASF.Fold m a b
     -> D.Stream m (Array a)
     -> D.Stream m b
-foldManyD (ASF.Fold (PRD.Parser pstep initial extract)) (D.Stream step state) =
+foldArrManyD (ASF.Fold (PRD.Parser pstep initial extract)) (D.Stream step state) =
     D.Stream stepOuter (ParseChunksInit [] state)
 
     where
@@ -694,10 +866,10 @@ foldManyD (ASF.Fold (PRD.Parser pstep initial extract)) (D.Stream step state) =
 -- See "Streamly.Prelude.foldMany" for more details.
 --
 -- /Pre-release/
-{-# INLINE foldMany #-}
-foldMany
+{-# INLINE foldArrMany #-}
+foldArrMany
     :: (IsStream t, MonadThrow m, Storable a)
     => ASF.Fold m a b
     -> t m (Array a)
     -> t m b
-foldMany p m = D.fromStreamD $ foldManyD p (D.toStreamD m)
+foldArrMany p m = D.fromStreamD $ foldArrManyD p (D.toStreamD m)

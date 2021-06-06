@@ -122,6 +122,7 @@ extra-source-files:
     test/Streamly/Test/Data/Array/Prim.hs
     test/Streamly/Test/Data/Array/Prim/Pinned.hs
     test/Streamly/Test/Data/Array/Foreign.hs
+    test/Streamly/Test/Data/Array/Stream/Foreign.hs
     test/Streamly/Test/Data/Parser/ParserD.hs
     test/Streamly/Test/FileSystem/Event.hs
     test/Streamly/Test/FileSystem/Handle.hs
