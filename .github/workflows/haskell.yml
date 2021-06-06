@@ -45,7 +45,7 @@ jobs:
         cabal_version: ["latest"]
         include:
           - name: ghc_HEAD
-            ghc_version: head
+            ghc_version: HEAD
             build: cabal-v2
             cabal_build_options: "--allow-newer=hsc2hs"
             cabal_build_targets: "streamly streamly-tests"
