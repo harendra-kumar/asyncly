@@ -41,63 +41,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [8.10.4+stack+lts-17.8, 8.10.2+macOS, 8.8.3+inspection+fusion-plugin+Werror, 8.8.4+stack+lts-16.31, 8.6.5+fusion-plugin, 8.6.5+streamk, 8.4.4+debug, doctests]
-        cabal_version: ["3.2"]
+        #name: [8.10.4+stack+lts-17.8, 8.10.2+macOS, 8.8.3+inspection+fusion-plugin+Werror, 8.8.4+stack+lts-16.31, 8.6.5+fusion-plugin, 8.6.5+streamk, 8.4.4+debug, doctests]
+        name: [ghc_HEAD]
+        cabal_version: ["latest"]
         include:
-          #- name: 9.0.1+no-bench
-          #  ghc_version: 9.0.1
-          #  build: cabal-v2
-          #  cabal_build_options: "--allow-newer=hsc2hs"
-          #  cabal_build_targets: "streamly streamly-tests"
-          #  disable_sdist_build: "y"
-          #  runner: ubuntu-latest
-          - name: 8.10.4+stack+lts-17.8
-            build: stack
-            resolver: lts-17.8
-            sdist_options: "--ignore-check"
-            stack_build_options: "--flag streamly-benchmarks:-opt"
-            runner: ubuntu-latest
-          - name: 8.10.2+macOS
-            ghc_version: 8.10.2
+          - name: ghc_HEAD
+            ghc_version: head
             build: cabal-v2
+            cabal_build_options: "--allow-newer=hsc2hs"
+            cabal_build_targets: "streamly streamly-tests"
             disable_sdist_build: "y"
-            runner: macos-latest
-          - name: 8.8.3+inspection+fusion-plugin+Werror
-            ghc_version: 8.8.3
-            build: cabal-v2
-            cabal_project: cabal.project.ci
-            cabal_build_options: "--flag fusion-plugin --flag inspection"
             runner: ubuntu-latest
-          - name: 8.8.4+stack+lts-16.31
-            build: stack
-            resolver: lts-16.31
-            sdist_options: "--ignore-check"
-            stack_build_options: "--flag streamly-benchmarks:-opt"
-            runner: ubuntu-latest
-          - name: 8.6.5+streamk
-            ghc_version: 8.6.5
-            build: cabal-v2
-            cabal_build_options: "--flag streamk --flag -opt"
-            runner: ubuntu-latest
-          - name: 8.6.5+fusion-plugin
-            ghc_version: 8.6.5
-            build: cabal-v2
-            cabal_build_options: "--flag fusion-plugin"
-            # haddock generation does not work with 8.6.5+fusion-plugin
-            disable_docs: "y"
-            runner: ubuntu-latest
-          - name: 8.4.4+debug
-            ghc_version: 8.4.4
-            build: cabal-v2
-            cabal_build_options: "--flag debug --flag -opt"
-            runner: ubuntu-latest
-          - name: doctests
-            ghc_version: 8.8.3
-            build: cabal-v2
-            cabal_build_options: "--flag doctests"
-            disable_dist_checks: "y"
-            cabal_build_targets: doctests
-            runner: ubuntu-latest
+          
 
     steps:
     - uses: actions/checkout@v2
