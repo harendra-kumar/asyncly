@@ -129,7 +129,7 @@ let haskellPackages =
           export CABAL_DIR="$(pwd)/.cabal.nix"
           if test -n "$PS_SHELL"
           then
-            export PS1="$PS_SHELL\[$bldred\](nix)\[$txtrst\] "
+            export PS1="$PS_SHELL\[$bldred\](nix:streamly)\[$txtrst\] "
           fi
         '';
     };
