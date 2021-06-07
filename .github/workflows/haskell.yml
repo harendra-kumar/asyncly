@@ -57,9 +57,6 @@ jobs:
     - uses: actions/checkout@v2
 
     - uses: haskell/actions/setup@v1
-      run: |
-        bash -c "apt install libgmp-dev"  
-        bash -c "apt install libtinfo-dev" 
       with:
         ghc-version: ${{ matrix.ghc_version }}
         cabal-version: ${{ matrix.cabal_version }}
@@ -69,6 +66,11 @@ jobs:
       with:
         path: ~/.cabal
         key: ${{ runner.os }}-${{ matrix.ghc_version }}-cabal
+
+    - name: Install libtinfo
+      run: |
+        bash -c "sudo apt install libgmp-dev"  
+        bash -c "sudo apt install libtinfo-dev"   
 
     - name: Download packcheck
       run: |
