@@ -45,7 +45,7 @@ jobs:
         cabal_version: ["latest"]
         include:
           - name: ghc_HEAD
-            ghc_version: latest
+            ghc_version: head
             build: cabal-v2
             cabal_build_options: "--allow-newer=hsc2hs"
             cabal_build_targets: "streamly streamly-tests"
@@ -67,6 +67,11 @@ jobs:
         path: ~/.cabal
         key: ${{ runner.os }}-${{ matrix.ghc_version }}-cabal
 
+    - name: Install libtinfo
+      run: |
+        bash -c "sudo apt install libgmp-dev"  
+        bash -c "sudo apt install libtinfo-dev"   
+
     - name: Download packcheck
       run: |
         # If a custom stack-yaml is specified, replace the default with that
@@ -82,3 +87,4 @@ jobs:
     - name: Run packcheck
       run: |
         bash -c "$PACKCHECK_LOCAL_PATH $BUILD"
+
