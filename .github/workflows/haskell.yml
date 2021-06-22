@@ -156,7 +156,8 @@ jobs:
           rm -f cabal-docspec.xz
           chmod a+x $HOME/.cabal/bin/cabal-docspec
           cabal build all
-          cabal-docspec
+          $HOME/.cabal/bin/cabal-docspec --version
+          $HOME/.cabal/bin/cabal-docspec
         fi
 
     - name: Run tests
