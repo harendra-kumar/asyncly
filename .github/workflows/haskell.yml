@@ -157,7 +157,7 @@ jobs:
           chmod a+x $HOME/.cabal/bin/cabal-docspec
           cabal build all
           $HOME/.cabal/bin/cabal-docspec --version
-          $HOME/.cabal/bin/cabal-docspec
+          $HOME/.cabal/bin/cabal-docspec --timeout 60
         fi
 
     - name: Run tests
