@@ -155,7 +155,7 @@ jobs:
           xz -d < cabal-docspec.xz > $HOME/.cabal/bin/cabal-docspec
           rm -f cabal-docspec.xz
           chmod a+x $HOME/.cabal/bin/cabal-docspec
-          cabal install
+          cabal build all
           $HOME/.cabal/bin/cabal-docspec --version
           $HOME/.cabal/bin/cabal-docspec --timeout 60
         fi
