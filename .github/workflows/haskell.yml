@@ -164,10 +164,13 @@ jobs:
       run: |
         if test -z "$COVERAGE"
         then
-          export TOOLS_DIR=/opt
-          # /usr/local/opt/curl/bin for macOS
-          export PATH=$HOME/.local/bin:$HOME/.ghcup/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/opt/curl/bin
-          bash -c "$PACKCHECK_LOCAL_PATH $BUILD"
+          if test -z "$DOCTEST"
+          then
+            export TOOLS_DIR=/opt
+            # /usr/local/opt/curl/bin for macOS
+            export PATH=$HOME/.local/bin:$HOME/.ghcup/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/opt/curl/bin
+            bash -c "$PACKCHECK_LOCAL_PATH $BUILD"
+          fi
         else
           # Run tests with coverage
           cabal update
