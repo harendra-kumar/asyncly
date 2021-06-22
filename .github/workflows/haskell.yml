@@ -145,6 +145,20 @@ jobs:
         if test ! -e "$PACKCHECK_LOCAL_PATH"; then $CURL -sL -o "$PACKCHECK_LOCAL_PATH" $PACKCHECK_URL; fi;
         chmod +x $PACKCHECK_LOCAL_PATH
 
+    - name: install cabal-docspec
+      run: |
+        if test -z "$DOCTEST"
+        then
+          mkdir -p $HOME/.cabal/bin
+          curl -sL https://github.com/phadej/cabal-extras/releases/download/cabal-docspec-0.0.0.20210111/cabal-docspec-0.0.0.20210111.xz > cabal-docspec.xz
+          echo '0829bd034fba901cbcfe491d98ed8b28fd54f9cb5c91fa8e1ac62dc4413c9562  cabal-docspec.xz' | sha256sum -c -
+          xz -d < cabal-docspec.xz > $HOME/.cabal/bin/cabal-docspec
+          rm -f cabal-docspec.xz
+          chmod a+x $HOME/.cabal/bin/cabal-docspec
+          cabal build all
+          cabal-docspec
+        fi
+
     - name: Run tests
       run: |
         if test -z "$COVERAGE"
@@ -165,16 +179,4 @@ jobs:
           hpc-coveralls --repo-token="$COVERALLS_TOKEN" --coverage-mode=StrictlyFullLines
         fi
 
-    - name: install cabal-docspec
-      run: |
-        if test -z "$DOCTEST"
-        then
-          mkdir -p $HOME/.cabal/bin
-          curl -sL https://github.com/phadej/cabal-extras/releases/download/cabal-docspec-0.0.0.20210111/cabal-docspec-0.0.0.20210111.xz > cabal-docspec.xz
-          echo '0829bd034fba901cbcfe491d98ed8b28fd54f9cb5c91fa8e1ac62dc4413c9562  cabal-docspec.xz' | sha256sum -c -
-          xz -d < cabal-docspec.xz > $HOME/.cabal/bin/cabal-docspec
-          rm -f cabal-docspec.xz
-          chmod a+x $HOME/.cabal/bin/cabal-docspec
-          cabal-v2 v2-build all
-          cabal-docspec
-        fi
+
