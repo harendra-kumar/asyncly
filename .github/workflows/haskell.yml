@@ -145,9 +145,9 @@ jobs:
         if test ! -e "$PACKCHECK_LOCAL_PATH"; then $CURL -sL -o "$PACKCHECK_LOCAL_PATH" $PACKCHECK_URL; fi;
         chmod +x $PACKCHECK_LOCAL_PATH
 
-    - name: install cabal-docspec
+    - name: install and run cabal-docspec
       run: |
-        if test -z "$DOCTEST"
+        if test -n "$DOCTEST"
         then
           mkdir -p $HOME/.cabal/bin
           curl -sL https://github.com/phadej/cabal-extras/releases/download/cabal-docspec-0.0.0.20210111/cabal-docspec-0.0.0.20210111.xz > cabal-docspec.xz
@@ -155,7 +155,7 @@ jobs:
           xz -d < cabal-docspec.xz > $HOME/.cabal/bin/cabal-docspec
           rm -f cabal-docspec.xz
           chmod a+x $HOME/.cabal/bin/cabal-docspec
-          cabal build all
+          cabal install
           $HOME/.cabal/bin/cabal-docspec --version
           $HOME/.cabal/bin/cabal-docspec --timeout 60
         fi
