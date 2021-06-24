@@ -151,7 +151,6 @@ where
 
 import Control.Monad.Catch (MonadThrow)
 import Control.Monad.IO.Class (MonadIO(..))
-import Data.Functor.Identity (Identity (..))
 import Foreign.Storable (Storable)
 import Streamly.Internal.Data.Parser (Parser (..))
 import Streamly.Internal.Data.SVar (MonadAsync, defState)
@@ -800,8 +799,11 @@ toHandle h = go
 -- /Pre-release/
 --
 {-# INLINE toStream #-}
-toStream :: Monad m => SerialT m a -> m (SerialT Identity a)
-toStream = foldr K.cons K.nil
+toStream :: (Monad m, Monad n)
+    => (forall x. m x -> n x) -> SerialT m a -> m (SerialT n a)
+toStream  f strm = do
+    ss <- foldr K.cons K.nil strm
+    return (K.hoist f ss)
 
 -- | Convert a stream to a pure stream in reverse order.
 --
@@ -812,8 +814,11 @@ toStream = foldr K.cons K.nil
 -- /Pre-release/
 --
 {-# INLINE toStreamRev #-}
-toStreamRev :: Monad m => SerialT m a -> m (SerialT Identity a)
-toStreamRev = foldl' (flip K.cons) K.nil
+toStreamRev :: (Monad m, Monad n)
+    => (forall x. m x -> n x) -> SerialT m a -> m (SerialT n a)
+toStreamRev f strm = do
+    ss <- foldl' (flip K.cons) K.nil strm
+    return (K.hoist f ss)
 
 ------------------------------------------------------------------------------
 -- Concurrent Application
