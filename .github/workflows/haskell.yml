@@ -44,6 +44,7 @@ jobs:
       # Pull token from "secrets" setting of the github repo
       COVERALLS_TOKEN: ${{ secrets.COVERALLS_TOKEN }}
       COVERAGE: ${{ matrix.coverage }}
+      DOCTEST: ${{ matrix.doctest }}
 
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -59,6 +60,7 @@ jobs:
           - 8.6.5+fusion-plugin
           - 8.6.5+streamk
           - 8.4.4+debug
+          - docspec
         cabal_version: ["3.4"]
         include:
           - name: 9.0.1
@@ -115,6 +117,10 @@ jobs:
             cabal_project: cabal.project
             cabal_build_options: "--flag debug --flag -opt"
             runner: ubuntu-latest
+          - name: docspec
+            ghc_version: 8.10.4
+            doctest: "y"
+            runner: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v2
@@ -139,14 +145,32 @@ jobs:
         if test ! -e "$PACKCHECK_LOCAL_PATH"; then $CURL -sL -o "$PACKCHECK_LOCAL_PATH" $PACKCHECK_URL; fi;
         chmod +x $PACKCHECK_LOCAL_PATH
 
+    - name: install and run cabal-docspec
+      run: |
+        if test -n "$DOCTEST"
+        then
+          mkdir -p $HOME/.cabal/bin
+          curl -sL https://github.com/phadej/cabal-extras/releases/download/cabal-docspec-0.0.0.20210111/cabal-docspec-0.0.0.20210111.xz > cabal-docspec.xz
+          echo '0829bd034fba901cbcfe491d98ed8b28fd54f9cb5c91fa8e1ac62dc4413c9562  cabal-docspec.xz' | sha256sum -c -
+          xz -d < cabal-docspec.xz > $HOME/.cabal/bin/cabal-docspec
+          rm -f cabal-docspec.xz
+          chmod a+x $HOME/.cabal/bin/cabal-docspec
+          cabal build all
+          $HOME/.cabal/bin/cabal-docspec --version
+          $HOME/.cabal/bin/cabal-docspec --timeout 60
+        fi
+
     - name: Run tests
       run: |
         if test -z "$COVERAGE"
         then
-          export TOOLS_DIR=/opt
-          # /usr/local/opt/curl/bin for macOS
-          export PATH=$HOME/.local/bin:$HOME/.ghcup/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/opt/curl/bin
-          bash -c "$PACKCHECK_LOCAL_PATH $BUILD"
+          if test -z "$DOCTEST"
+          then
+            export TOOLS_DIR=/opt
+            # /usr/local/opt/curl/bin for macOS
+            export PATH=$HOME/.local/bin:$HOME/.ghcup/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/opt/curl/bin
+            bash -c "$PACKCHECK_LOCAL_PATH $BUILD"
+          fi
         else
           # Run tests with coverage
           cabal update
@@ -158,3 +182,5 @@ jobs:
           bin/test.sh --coverage --raw
           hpc-coveralls --repo-token="$COVERALLS_TOKEN" --coverage-mode=StrictlyFullLines
         fi
+
+
