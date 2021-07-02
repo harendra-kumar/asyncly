@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 
+# Note that this script is used in the "streamly" package as well as
+# in "streaming-benchmarks" package. Any changes to the script should be
+# generic enough so that it works in both the cases.
+
+# Customization options
+BENCHMARK_DIR=benchmark
+BENCHMARK_PACKAGE_NAME=streamly-benchmarks
+BENCHMARK_PACKAGE_VERSION=0.0.0
+
+USE_GAUGE=0
+DEFAULT_FIELDS="allocated cputime bytescopied"
+
+#------------------------------------------------------------------------------
+
 set -o pipefail
 
 SCRIPT_DIR=$(cd `dirname $0`; pwd)
@@ -13,6 +27,7 @@ print_help () {
   echo "       [--prefix <benchmark name prefix to match>"
   echo "       [--fields <"field1 field2 ..." | help>]"
   echo "       [--sort-by-name]"
+  echo "       [--compare]"
   echo "       [--graphs]"
   echo "       [--no-measure]"
   echo "       [--append]"
@@ -25,10 +40,11 @@ print_help () {
   echo "       [--with-compiler <compiler exe name>]"
   echo "       [--cabal-build-options <options>]"
   echo "       [--rtsopts <opts>]"
-  echo "       [--compare] [--base <commit>] [--candidate <commit>]"
+  echo "       [--commit-compare] [--base <commit>] [--candidate <commit>]"
   echo "       -- <gauge options or benchmarks>"
   echo
   echo "--benchmarks: benchmarks to run, use 'help' for list of benchmarks"
+  echo "--compare: compare the specified benchmarks with each other"
   echo "--fields: measurement fields to report, use 'help' for a list"
   echo "--graphs: Generate graphical reports"
   echo "--no-measure: Don't run benchmarks, run reports from previous results"
@@ -46,7 +62,7 @@ print_help () {
   echo "bench.sh --benchmarks Data.Parser -- Data.Parser/o-1-space "
   echo "restricts Heap/Stack space for O(1) characterstics"
   echo
-  echo "When using --compare, by default comparative chart of HEAD^ vs HEAD"
+  echo "When using --commit-compare, by default comparative chart of HEAD^ vs HEAD"
   echo "commit is generated, in the 'charts' directory."
   echo "Use --base and --candidate to select the commits to compare."
   echo
@@ -99,9 +115,9 @@ build_report_prog() {
     then
       echo "Building bench-report executables"
       BUILD_ONCE=1
-      pushd benchmark/bench-report
+      pushd $BENCHMARK_DIR/bench-report
       local cmd
-      cmd="$CABAL_EXECUTABLE install --installdir ../../bin bench-report"
+      cmd="$CABAL_EXECUTABLE install --installdir $SCRIPT_DIR bench-report"
       if test "$USE_NIX" -eq 0
       then
         $cmd || die "bench-report build failed"
@@ -240,14 +256,14 @@ run_benches_comparing() {
     git checkout "$BASE" || die "Checkout of base commit [$BASE] failed"
 
     $BUILD_BENCH || die "build failed"
-    run_bench_targets streamly-benchmarks b "$bench_list" target_exe_extra_args
+    run_bench_targets $BENCHMARK_PACKAGE_NAME b "$bench_list" target_exe_extra_args
 
     echo "Checking out candidate commit [$CANDIDATE] for benchmarking"
     git checkout "$CANDIDATE" || \
         die "Checkout of candidate [$CANDIDATE] commit failed"
 
     $BUILD_BENCH || die "build failed"
-    run_bench_targets streamly-benchmarks b "$bench_list" target_exe_extra_args
+    run_bench_targets $BENCHMARK_PACKAGE_NAME b "$bench_list" target_exe_extra_args
     # XXX reset back to the original commit
 }
 
@@ -269,9 +285,9 @@ run_measurements() {
       backup_output_file $i
   done
 
-  if test "$COMPARE" = "0"
+  if test "$COMMIT_COMPARE" = "0"
   then
-    run_bench_targets streamly-benchmarks b "$bench_list" target_exe_extra_args
+    run_bench_targets $BENCHMARK_PACKAGE_NAME b "$bench_list" target_exe_extra_args
   else
     run_benches_comparing "$bench_list"
   fi
@@ -300,16 +316,21 @@ run_reports() {
 
 cd $SCRIPT_DIR/..
 
-USE_GAUGE=0
 USE_GIT_CABAL=1
 USE_NIX=0
 set_common_vars
 
-DEFAULT_FIELDS="allocated bytescopied cputime"
-ALL_FIELDS="$FIELDS time cycles utime stime minflt majflt nvcsw nivcsw"
+COMMON_FIELDS="allocated bytescopied cputime maxrss"
+if test "$USE_GAUGE" -eq 1
+then
+  ALL_FIELDS="$COMMON_FIELDS time cycles utime stime minflt majflt nvcsw nivcsw"
+else
+  ALL_FIELDS="$COMMON_FIELDS"
+fi
 FIELDS=$DEFAULT_FIELDS
 
 COMPARE=0
+COMMIT_COMPARE=0
 BASE=
 CANDIDATE=
 
@@ -348,6 +369,7 @@ do
     --slow) SLOW=1; shift ;;
     --quick) QUICK_MODE=1; shift ;;
     --compare) COMPARE=1; shift ;;
+    --commit-compare) COMMIT_COMPARE=1; shift ;;
     --raw) RAW=1; shift ;;
     --append) APPEND=1; shift ;;
     --long) LONG=1; shift ;;
@@ -443,7 +465,7 @@ fi
 BUILD_BENCH="$CABAL_EXECUTABLE v2-build $BUILD_FLAGS $CABAL_BUILD_OPTIONS --enable-benchmarks"
 if test "$MEASURE" = "1"
 then
-  run_build "$BUILD_BENCH" streamly-benchmarks bench "$TARGETS"
+  run_build "$BUILD_BENCH" $BENCHMARK_PACKAGE_NAME bench "$TARGETS"
   run_measurements "$TARGETS"
 fi
 
@@ -451,20 +473,38 @@ fi
 # Run reports
 #-----------------------------------------------------------------------------
 
-COMPARISON_REPORTS=""
-for i in $COMPARISONS
-do
-  if test "$(has_item "$TARGETS_ORIG" $i)" = $i
-  then
-    COMPARISON_REPORTS="$COMPARISON_REPORTS $i"
-    mkdir -p "charts/$i"
-    constituents=$(eval "echo -n \$${i}")
-    dest_file="charts/$i/results.csv"
+# $1: var name
+build_comparison_results () {
+    local name
+    local constituents
+
+    name=$1
+    constituents=$(eval "echo -n \$${name}")
+    mkdir -p "charts/$name"
+    dest_file="charts/$name/results.csv"
     : > $dest_file
     for j in $constituents
     do
       cat "charts/$j/results.csv" >> $dest_file
     done
+}
+
+if test "$COMPARE" -eq 1
+then
+  DYN_CMP_GRP="$(echo "$TARGETS" | sed -e 's/ /_/g')_cmp"
+  eval "$DYN_CMP_GRP=\"$TARGETS\""
+  COMPARISON_REPORTS=$DYN_CMP_GRP
+  build_comparison_results $DYN_CMP_GRP
+else
+  COMPARISON_REPORTS=""
+fi
+
+for i in $COMPARISONS
+do
+  if test "$(has_item "$TARGETS_ORIG" $i)" = $i
+  then
+    COMPARISON_REPORTS="$COMPARISON_REPORTS $i"
+    build_comparison_results $i
   fi
 done
 
@@ -472,4 +512,8 @@ if test "$RAW" = "0"
 then
   run_reports "$TARGETS"
   run_reports "$COMPARISON_REPORTS"
+  if test -n "$DYN_CMP_GRP"
+  then
+    rm -rf "charts/$DYN_CMP_GRP"
+  fi
 fi
