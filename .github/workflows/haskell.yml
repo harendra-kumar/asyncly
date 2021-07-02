@@ -158,3 +158,73 @@ jobs:
           bin/test.sh --coverage --raw
           hpc-coveralls --repo-token="$COVERALLS_TOKEN" --coverage-mode=StrictlyFullLines
         fi
+
+  coverage:
+    name: Coverage build
+    runs-on: ubuntu-latest
+    env:
+      CABAL_REINIT_CONFIG: y
+      LC_ALL: C.UTF-8
+      ENABLE_INSTALL: "n"
+      STACK_UPGRADE: "y"
+      CABAL_CHECK_RELAX: y
+      CABAL_NO_SANDBOX: y
+      CABAL_HACKAGE_MIRROR: hackage.haskell.org:http://hackage.fpcomplete.com
+      PACKCHECK_LOCAL_PATH: "./packcheck.sh"
+      PACKCHECK_GITHUB_URL: "https://raw.githubusercontent.com/harendra-kumar/packcheck"
+      PACKCHECK_GITHUB_COMMIT: "563702bd02c41343dcd3dfcfef0845ca428a9240"
+      BUILD: stack
+      RESOLVER: lts-16.31
+      COVERAGE: "y"
+      STACK_BUILD_OPTIONS: "streamly-tests"
+      DISABLE_DOCS: "y"
+      DISABLE_BENCH: "y"
+      SDIST_OPTIONS: "--ignore-check"
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - uses: haskell/actions/setup@v1
+      with:
+        ghc-version: 8.8.4
+        enable-stack: true
+        stack-version: 'latest'
+        stack-no-global: true
+
+    - uses: actions/cache@v1
+      name: Cache ~/.stack
+      with:
+        path: ~/.stack
+        key: coverage-stack
+
+    - name: Download packcheck
+      run: |
+        # If a custom stack-yaml is specified, replace the default with that
+        if test -e "$STACK_YAML"; then rm -f stack.yaml && ln -sv $STACK_YAML stack.yaml; else true; fi
+        unset STACK_YAML
+
+        # Get packcheck if needed
+        CURL=$(which curl)
+        PACKCHECK_URL=${PACKCHECK_GITHUB_URL}/${PACKCHECK_GITHUB_COMMIT}/packcheck.sh
+        if test ! -e "$PACKCHECK_LOCAL_PATH"; then $CURL -sL -o "$PACKCHECK_LOCAL_PATH" $PACKCHECK_URL; fi;
+        chmod +x $PACKCHECK_LOCAL_PATH
+
+    - name: Run coverage build
+      run: |
+        bash -c "$PACKCHECK_LOCAL_PATH $BUILD"
+
+    - name: Install hpc-lcov
+      run: |
+        stack --resolver lts-16.31 install hpc-lcov
+ 
+    - name: Prepare coverage file for upload
+      run: |
+        mkdir coverage
+        cd .packcheck
+        hpc-lcov
+        lcov -r lcov.info -o ../coverage/lcov.info 'test/lib/*'
+
+    - name: Upload to coveralls
+      uses: coverallsapp/github-action@master
+      with:
+        github-token: ${{ secrets.github_token }}
