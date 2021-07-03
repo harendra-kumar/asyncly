@@ -2,7 +2,7 @@
 
 # Customization options
 bench_config () {
-  BENCHMARK_DIR=benchmark
+  BENCH_REPORT_DIR=benchmark/bench-report
   BENCHMARK_PACKAGE_NAME=streamly-benchmarks
   BENCHMARK_PACKAGE_VERSION=0.0.0
 

@@ -77,39 +77,17 @@ list_comparisons ()  {
   echo
 }
 
-# chart is expensive to build and usually not required to be rebuilt
-cabal_which_report() {
-    local path="./bin/$1"
-    if test -e "$path"
-    then
-      echo $path
-    fi
-}
-
-find_report_prog() {
-    local prog_name="bench-report"
-    hash -r
-    local prog_path=$(cabal_which_report $prog_name)
-    if test -x "$prog_path"
-    then
-      echo $prog_path
-    else
-      return 1
-    fi
-}
-
 build_report_prog() {
-    local prog_name="bench-report"
-    local prog_path=$(cabal_which_report $prog_name)
+    local prog_path=$BENCH_REPORT_DIR/bin/bench-report
 
     hash -r
     if test ! -x "$prog_path" -a "$BUILD_ONCE" = "0"
     then
       echo "Building bench-report executables"
       BUILD_ONCE=1
-      pushd $BENCHMARK_DIR/bench-report
+      pushd $BENCH_REPORT_DIR
       local cmd
-      cmd="$CABAL_EXECUTABLE install --installdir $SCRIPT_DIR bench-report"
+      cmd="$CABAL_EXECUTABLE install --installdir bin bench-report"
       if test "$USE_NIX" -eq 0
       then
         $cmd || die "bench-report build failed"
@@ -117,7 +95,6 @@ build_report_prog() {
         nix-shell --run "$cmd" || die "bench-report build failed"
       fi
       popd
-
     elif test ! -x "$prog_path"
     then
       return 1
@@ -130,8 +107,8 @@ build_report_progs() {
   then
       build_report_prog || exit 1
       local prog
-      prog=$(find_report_prog) || \
-          die "Cannot find bench-report executable"
+      prog=$BENCH_REPORT_DIR/bin/bench-report
+      test -x $prog || die "Cannot find bench-report executable"
       echo "Using bench-report executable [$prog]"
   fi
 }
@@ -426,8 +403,8 @@ run_measurements() {
 
 run_reports() {
     local prog
-    prog=$(find_report_prog) || \
-      die "Cannot find bench-graph executable"
+    prog=$BENCH_REPORT_DIR/bin/bench-report
+    test -x $prog || die "Cannot find bench-report executable"
     echo
 
     for i in $1
@@ -444,8 +421,6 @@ run_reports() {
 #-----------------------------------------------------------------------------
 # Execution starts here
 #-----------------------------------------------------------------------------
-
-cd $SCRIPT_DIR/..
 
 USE_GIT_CABAL=1 # This is used by set_common_vars
 set_common_vars
