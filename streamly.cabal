@@ -77,13 +77,13 @@ extra-source-files:
     benchmark/lib/Streamly/Benchmark/Common/*.hs
     benchmark/streamly-benchmarks.cabal
     bin/bench.sh
-    bin/bench-exec-one.sh
+    bin/bench-config.sh
+    bin/bench-runner.sh
     bin/build-lib.sh
     bin/ghc.sh
     bin/run-ci.sh
     bin/mk-hscope.sh
     bin/mk-tags.sh
-    bin/targets.sh
     bin/test.sh
     configure
     configure.ac
