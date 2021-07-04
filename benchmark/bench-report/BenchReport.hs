@@ -4,13 +4,15 @@
 module Main where
 
 import Control.Exception (catch, ErrorCall(..))
-import Control.Monad.Trans.State
+import Control.Monad (mzero)
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Maybe
+import Control.Monad.Trans.State
 import Data.Char (toLower)
 import Data.List
+import GHC.Real (infinity)
 import System.Environment (getArgs)
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad (mzero)
+import Text.Read (readMaybe)
 
 import BenchShow
 
@@ -28,10 +30,12 @@ data Options = Options
     , sortByName :: Bool
     , benchType :: Maybe BenchType
     , fields :: [String]
+    , diffStyle :: GroupStyle
+    , cutOffPercent :: Double
     } deriving Show
 
 defaultOptions :: Options
-defaultOptions = Options False False Nothing ["time"]
+defaultOptions = Options False False Nothing ["time"] PercentDiff 0
 
 setGenGraphs :: Monad m => Bool -> StateT (a, Options) m ()
 setGenGraphs val = do
@@ -52,6 +56,24 @@ setFields :: Monad m => [String] -> StateT (a, Options) m ()
 setFields val = do
     (args, opts) <- get
     put (args, opts { fields = val })
+
+setDiff :: Monad m => String -> StateT (a, Options) m ()
+setDiff val = do
+    (args, opts) <- get
+    let cmpStyle =
+            case val of
+                "absolute" -> Absolute
+                "multiples" -> Multiples
+                "percent" -> PercentDiff
+                x -> error $ "Unknown diff option: " ++ show x
+     in put (args, opts { diffStyle = cmpStyle })
+
+setCutOff :: Monad m => String -> StateT (a, Options) m ()
+setCutOff val = do
+    (args, opts) <- get
+    case readMaybe val of
+        Just x -> put (args, opts { cutOffPercent = x })
+        Nothing -> error $ "Invalid cutoff value: " ++ show val
 
 -- Like the shell "shift" to shift the command line arguments
 shift :: StateT ([String], Options) (MaybeT IO) (Maybe String)
@@ -81,6 +103,24 @@ parseFields = do
                     "please provide a list of fields after --fields"
                 mzero
 
+parseDiff :: StateT ([String], Options) (MaybeT IO) ()
+parseDiff = do
+    x <- shift
+    case x of
+        Just str -> setDiff str
+        Nothing -> do
+                liftIO $ putStrLn "please provide a diff type"
+                mzero
+
+parseCutOff :: StateT ([String], Options) (MaybeT IO) ()
+parseCutOff = do
+    x <- shift
+    case x of
+        Just str -> setCutOff str
+        Nothing -> do
+                liftIO $ putStrLn "please provide a cutoff percent"
+                mzero
+
 -- totally imperative style option parsing
 parseOptions :: IO (Maybe Options)
 parseOptions = do
@@ -93,10 +133,12 @@ parseOptions = do
 
     parseOpt opt =
         case opt of
-            "--graphs"    -> setGenGraphs True
+            "--graphs" -> setGenGraphs True
             "--sort-by-name" -> setSortByName True
             "--benchmark" -> parseBench
-            "--fields"    -> parseFields
+            "--fields" -> parseFields
+            "--diff-style" -> parseDiff
+            "--diff-cutoff-percent" -> parseCutOff
             str -> do
                 liftIO $ putStrLn $ "Unrecognized option " <> str
                 mzero
@@ -147,12 +189,13 @@ showComparisons Options{..} cfg inp out =
 ------------------------------------------------------------------------------
 
 selectBench
-    :: Bool
+    :: Options
     -> (SortColumn -> Maybe GroupStyle -> Either String [(String, Double)])
     -> [String]
-selectBench sortName f =
+selectBench Options{..} f =
     reverse
     $ fmap fst
+    $ filter (\(_,y) -> filterPred y)
     $ either
       (const $ either error sortFunc $ f (ColumnIndex 0) (Just PercentDiff))
       sortFunc
@@ -160,7 +203,15 @@ selectBench sortName f =
 
     where
 
-    sortFunc = if sortName then sortOn fst else sortOn snd
+    sortFunc = if sortByName then sortOn fst else sortOn snd
+
+    cutOffMultiples = 1 + cutOffPercent / 100
+
+    filterPred x =
+        case benchType of
+            Just (Compare _) ->
+                x <= (negate cutOffPercent) || x >= cutOffPercent
+            _ -> True
 
 benchShow ::
        Options
@@ -183,8 +234,8 @@ main = do
             return ()
         Just opts@Options{fields = fs, benchType = btype} ->
             let cfg = defaultConfig
-                    { presentation = Groups PercentDiff
-                    , selectBenchmarks = selectBench (sortByName opts)
+                    { presentation = Groups (diffStyle opts)
+                    , selectBenchmarks = selectBench opts
                     , selectFields = filter
                         ( flip elem (fmap (fmap toLower) fs)
                         . fmap toLower
