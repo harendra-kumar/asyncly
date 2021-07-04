@@ -4,6 +4,10 @@ die () {
   exit 1
 }
 
+warn () {
+  >&2 echo -e "Warning: $1"
+}
+
 # $1: command
 function run_verbose() {
   echo "$*"

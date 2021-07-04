@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 
+SCRIPT_DIR=$(dirname $0)
+
 STREAMLY_VERSION=0.8.0
+BENCH_REPORT_DIR=benchmark/bench-report
+source $SCRIPT_DIR/targets.sh
 
 #------------------------------------------------------------------------------
 # Script
 #------------------------------------------------------------------------------
-
-SCRIPT_DIR=$(dirname $0)
 
 print_help () {
   echo "Usage: $0 "
@@ -39,7 +41,7 @@ print_help () {
 #-----------------------------------------------------------------------------
 
 RUNNING_TESTS=y
-source $SCRIPT_DIR/build-lib.sh
+source $BENCH_REPORT_DIR/bin/build-lib.sh
 
 USE_GIT_CABAL=1
 set_common_vars
@@ -79,8 +81,8 @@ set_derived_vars
 # Determine targets
 #-----------------------------------------------------------------------------
 
-# Requires RUNNING_DEVBUILD var
-source $SCRIPT_DIR/targets.sh
+# Defined in targets.sh
+targets
 
 if test "$(has_item "$TARGETS" help)" = "help"
 then
