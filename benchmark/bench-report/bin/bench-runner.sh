@@ -20,6 +20,8 @@ print_help () {
   echo "       [--fields <"field1 field2 ..." | help>]"
   echo "       [--sort-by-name]"
   echo "       [--compare]"
+  echo "       [--diff-style <absolute|percent|multiples>]"
+  echo "       [--cutoff-percent <percent-value>]"
   echo "       [--graphs]"
   echo "       [--no-measure]"
   echo "       [--append]"
@@ -419,6 +421,8 @@ run_reports() {
             --benchmark $i \
             $(test "$GRAPH" = 1 && echo "--graphs") \
             $(test "$SORT_BY_NAME" = 1 && echo "--sort-by-name") \
+            $(test -n "$BENCH_DIFF_STYLE" && echo "--diff-style $BENCH_DIFF_STYLE") \
+            $(test -n "$BENCH_CUTOFF_PERCENT" && echo "--diff-cutoff-percent $BENCH_CUTOFF_PERCENT") \
             --fields "$FIELDS"
     done
 }
@@ -468,6 +472,8 @@ do
     --cabal-build-options) shift; CABAL_BUILD_OPTIONS+=$1; shift ;;
     --rtsopts) shift; RTS_OPTIONS=$1; shift ;;
     --config) shift; BENCH_CONFIG_FILE=$1; shift ;;
+    --diff-style) shift; BENCH_DIFF_STYLE=$1; shift ;;
+    --diff-cutoff-percent) shift; BENCH_CUTOFF_PERCENT=$1; shift ;;
     # flags
     --slow) SLOW=1; shift ;;
     --quick) QUICK_MODE=1; shift ;;
