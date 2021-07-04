@@ -42,8 +42,13 @@ bench_rts_options () {
     *) echo -n "" ;;
   esac
 
-  echo " "
+  echo -n " "
+  case "$exe_name" in
+    Prelude.Concurrent*) echo -n "-K256K -M384M" ;;
+    *) echo -n "" ;;
+  esac
 
+  echo -n " "
   # Based on specific benchmark
   # XXX Note: for tasty-bench we replace the "." separator in the benchmark names
   # with "/" for matching with this. It may not work reliably if the benchmark
@@ -104,11 +109,6 @@ bench_rts_options () {
     # DEVBUILD only benchmarks - array foldable instance
     Data.Array.Foreign/o-1-space/elimination/foldable/foldl*) echo -n "-K8M" ;;
     Data.Array.Foreign/o-1-space/elimination/foldable/sum) echo -n "-K8M" ;;
-    *) echo -n "" ;;
-  esac
-
-  case "$exe_name" in
-    Prelude.Concurrent*) echo -n " -K256K -M384M" ;;
     *) echo -n "" ;;
   esac
 }
