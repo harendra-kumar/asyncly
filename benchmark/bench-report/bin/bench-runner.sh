@@ -178,15 +178,28 @@ bench_exec_one() {
   local BENCH_NAME1
   local BENCH_NAME2
   local BENCH_NAME
+  # XXX this is a hack to make the "/" separated names used in the functions
+  # determining options based on benchmark name. For tasty-bench the benchmark
+  # names are separated by "." instead of "/".
   if test "$USE_GAUGE" -eq 0
   then
-    # XXX this is a hack to make the "/" separated names used in the functions
-    # determining options based on benchmark name. For tasty-bench the benchmark
-    # names are separated by "." instead of "/".
+    # Remove the prefix "All."
     BENCH_NAME0=$(echo $BENCH_NAME_ORIG | sed -e s/^All\.//)
+
+    # Module names could contain dots e.g. "Prelude.Serial". So we insert
+    # an explicit "/" to separate the module name part and the rest of
+    # the benchmark name. For example, Prelude.Serial/elimination.drain
     BENCH_NAME1=$(echo $BENCH_NAME0 | cut -f1 -d '/')
-    BENCH_NAME2=$(echo $BENCH_NAME0 | cut -f2- -d '/' | sed -e 's/\./\//g')
-    BENCH_NAME="$BENCH_NAME1/$BENCH_NAME2"
+
+    if test "$BENCH_NAME1" = "$BENCH_NAME0"
+    then
+      # There is no "/" separator
+      BENCH_NAME1=$(echo $BENCH_NAME0 | sed -e 's/\./\//g')
+      BENCH_NAME2=""
+    else
+      BENCH_NAME2=/$(echo $BENCH_NAME0 | cut -f2- -d '/' | sed -e 's/\./\//g')
+    fi
+    BENCH_NAME="${BENCH_NAME1}${BENCH_NAME2}"
   else
     BENCH_NAME=$BENCH_NAME_ORIG
   fi
@@ -419,6 +432,7 @@ run_reports() {
         echo "Generating reports for ${i}..."
         $prog \
             --benchmark $i \
+            $(test "$USE_GAUGE" = 1 && echo "--use-gauge") \
             $(test "$GRAPH" = 1 && echo "--graphs") \
             $(test "$SORT_BY_NAME" = 1 && echo "--sort-by-name") \
             $(test -n "$BENCH_DIFF_STYLE" && echo "--diff-style $BENCH_DIFF_STYLE") \

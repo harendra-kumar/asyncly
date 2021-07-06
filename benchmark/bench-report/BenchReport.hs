@@ -28,6 +28,7 @@ data BenchType
 data Options = Options
     { genGraphs :: Bool
     , sortByName :: Bool
+    , useGauge :: Bool
     , benchType :: Maybe BenchType
     , fields :: [String]
     , diffStyle :: GroupStyle
@@ -35,7 +36,7 @@ data Options = Options
     } deriving Show
 
 defaultOptions :: Options
-defaultOptions = Options False False Nothing ["time"] PercentDiff 0
+defaultOptions = Options False False False Nothing ["time"] PercentDiff 0
 
 setGenGraphs :: Monad m => Bool -> StateT (a, Options) m ()
 setGenGraphs val = do
@@ -46,6 +47,11 @@ setSortByName :: Monad m => Bool -> StateT (a, Options) m ()
 setSortByName val = do
     (args, opts) <- get
     put (args, opts { sortByName = val })
+
+setUseGauge :: Monad m => Bool -> StateT (a, Options) m ()
+setUseGauge val = do
+    (args, opts) <- get
+    put (args, opts { useGauge = val })
 
 setBenchType :: Monad m => BenchType -> StateT (a, Options) m ()
 setBenchType val = do
@@ -135,6 +141,7 @@ parseOptions = do
         case opt of
             "--graphs" -> setGenGraphs True
             "--sort-by-name" -> setSortByName True
+            "--use-gauge" -> setUseGauge True
             "--benchmark" -> parseBench
             "--fields" -> parseFields
             "--diff-style" -> parseDiff
@@ -177,12 +184,18 @@ showComparisons Options{..} cfg inp out =
 
     where
 
-    dropComponent = dropWhile (== '/') . dropWhile (/= '/')
+    separator = if useGauge then '/' else '.'
+    dropComponent = dropWhile (== separator) . dropWhile (/= separator)
 
-    classifyComparison b = Just
-        ( takeWhile (/= '/') b
-        , dropComponent b
-        )
+    classifyComparison b =
+        let b1 =
+                if useGauge
+                then b
+                else dropComponent b --- drop "All." at the beginning
+         in Just
+            ( takeWhile (/= separator) b1
+            , dropComponent b1
+            )
 
 ------------------------------------------------------------------------------
 -- text reports
