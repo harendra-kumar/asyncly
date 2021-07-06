@@ -20,6 +20,8 @@ print_help () {
   echo "       [--fields <"field1 field2 ..." | help>]"
   echo "       [--sort-by-name]"
   echo "       [--compare]"
+  echo "       [--diff-style <absolute|percent|multiples>]"
+  echo "       [--cutoff-percent <percent-value>]"
   echo "       [--graphs]"
   echo "       [--no-measure]"
   echo "       [--append]"
@@ -176,15 +178,28 @@ bench_exec_one() {
   local BENCH_NAME1
   local BENCH_NAME2
   local BENCH_NAME
+  # XXX this is a hack to make the "/" separated names used in the functions
+  # determining options based on benchmark name. For tasty-bench the benchmark
+  # names are separated by "." instead of "/".
   if test "$USE_GAUGE" -eq 0
   then
-    # XXX this is a hack to make the "/" separated names used in the functions
-    # determining options based on benchmark name. For tasty-bench the benchmark
-    # names are separated by "." instead of "/".
+    # Remove the prefix "All."
     BENCH_NAME0=$(echo $BENCH_NAME_ORIG | sed -e s/^All\.//)
+
+    # Module names could contain dots e.g. "Prelude.Serial". So we insert
+    # an explicit "/" to separate the module name part and the rest of
+    # the benchmark name. For example, Prelude.Serial/elimination.drain
     BENCH_NAME1=$(echo $BENCH_NAME0 | cut -f1 -d '/')
-    BENCH_NAME2=$(echo $BENCH_NAME0 | cut -f2- -d '/' | sed -e 's/\./\//g')
-    BENCH_NAME="$BENCH_NAME1/$BENCH_NAME2"
+
+    if test "$BENCH_NAME1" = "$BENCH_NAME0"
+    then
+      # There is no "/" separator
+      BENCH_NAME1=$(echo $BENCH_NAME0 | sed -e 's/\./\//g')
+      BENCH_NAME2=""
+    else
+      BENCH_NAME2=/$(echo $BENCH_NAME0 | cut -f2- -d '/' | sed -e 's/\./\//g')
+    fi
+    BENCH_NAME="${BENCH_NAME1}${BENCH_NAME2}"
   else
     BENCH_NAME=$BENCH_NAME_ORIG
   fi
@@ -247,7 +262,7 @@ $RTS_OPTIONS \
       $QUICK_BENCH_OPTIONS \
       "$@" \
       --csv=${output_file}.tmp \
-      -p '$0 == "'"$BENCH_NAME_ESC"'"'
+      -p '$0 == "'"$BENCH_NAME_ESC"'"' || die "Benchmark execution failed."
 
     # Convert cpuTime field from picoseconds to seconds
     awk --version 2>&1 | grep -q "GNU Awk" \
@@ -262,7 +277,7 @@ $RTS_OPTIONS \
       $QUICK_BENCH_OPTIONS \
       "$@" \
       --csvraw=${output_file}.tmp \
-      -m exact "$BENCH_NAME"
+      -m exact "$BENCH_NAME" || die "Benchmark execution failed."
     tail -n +2 ${output_file}.tmp \
       >> $output_file
   fi
@@ -321,7 +336,12 @@ run_bench_target () {
   local target_name=$3
 
   local target_prog
-  target_prog=$(cabal_target_prog $package_name $component $target_name) || \
+  if test -z "$BENCHMARK_PACKAGE_VERSION"
+  then
+    echo "Please set BENCHMARK_PACKAGE_VERSION in bench_config"
+    exit 1
+  fi
+  target_prog=$(cabal_target_prog $package_name-$BENCHMARK_PACKAGE_VERSION $component $target_name) || \
     die "Cannot find executable for target $target_name"
 
   echo "Running executable $target_name ..."
@@ -412,8 +432,11 @@ run_reports() {
         echo "Generating reports for ${i}..."
         $prog \
             --benchmark $i \
+            $(test "$USE_GAUGE" = 1 && echo "--use-gauge") \
             $(test "$GRAPH" = 1 && echo "--graphs") \
             $(test "$SORT_BY_NAME" = 1 && echo "--sort-by-name") \
+            $(test -n "$BENCH_DIFF_STYLE" && echo "--diff-style $BENCH_DIFF_STYLE") \
+            $(test -n "$BENCH_CUTOFF_PERCENT" && echo "--diff-cutoff-percent $BENCH_CUTOFF_PERCENT") \
             --fields "$FIELDS"
     done
 }
@@ -463,6 +486,8 @@ do
     --cabal-build-options) shift; CABAL_BUILD_OPTIONS+=$1; shift ;;
     --rtsopts) shift; RTS_OPTIONS=$1; shift ;;
     --config) shift; BENCH_CONFIG_FILE=$1; shift ;;
+    --diff-style) shift; BENCH_DIFF_STYLE=$1; shift ;;
+    --diff-cutoff-percent) shift; BENCH_CUTOFF_PERCENT=$1; shift ;;
     # flags
     --slow) SLOW=1; shift ;;
     --quick) QUICK_MODE=1; shift ;;

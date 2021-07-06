@@ -112,6 +112,24 @@ set_targets() {
   fi
 }
 
+# XXX cabal issue "cabal v2-exec which" cannot find benchmark/test executables
+
+# $1: builddir
+# $2: package name with version
+# $3: component ("" (lib), t (test), b (benchmark), x (executable))
+# $4: command to find
+cabal_which_builddir() {
+  local path=$(echo $1/build/*/ghc-${GHC_VERSION}/${2}/$3/$4/build/$4/$4)
+  test -f "$path" && echo $path
+}
+
+# $1: package name with version
+# $2: component
+# $3: command to find
+cabal_which() {
+  cabal_which_builddir $BUILD_DIR $1 $2 $3
+}
+
 # We run the benchmarks in isolation in a separate process so that different
 # benchmarks do not interfere with other. To enable that we need to pass the
 # benchmark exe path to gauge as an argument. Unfortunately it cannot find its
@@ -119,7 +137,7 @@ set_targets() {
 
 # The path is dependent on the architecture and cabal version.
 
-# $1: package name
+# $1: package name with version
 # $2: component
 # $3: target
 cabal_target_prog () {
@@ -169,24 +187,6 @@ set_derived_vars () {
   GHC_VERSION=$($CABAL_WITH_COMPILER --numeric-version)
 }
 
-# XXX cabal issue "cabal v2-exec which" cannot find benchmark/test executables
-
-# $1: builddir
-# $2: package name
-# $3: component ("" (lib), t (test), b (benchmark), x (executable))
-# $4: command to find
-cabal_which_builddir() {
-  local path=$(echo $1/build/*/ghc-${GHC_VERSION}/${2}-0.0.0/$3/$4/build/$4/$4)
-  test -f "$path" && echo $path
-}
-
-# $1: package name
-# $2: component
-# $3: command to find
-cabal_which() {
-  cabal_which_builddir $BUILD_DIR $1 $2 $3
-}
-
 # $1: build program
 # $2: package name
 # $3: component prefix
@@ -203,48 +203,4 @@ run_build () {
     COMPONENTS+="$package:$component_prefix:$c "
   done
   run_verbose $build_prog $COMPONENTS || die "build failed"
-}
-
-# $1: target name
-get_tix_file () {
-  echo $BUILD_DIR/build/$SYSTEM/ghc-${GHC_VERSION}/$PACKAGE_FULL_NAME/hpc/vanilla/tix/$1/$1.tix
-}
-
-# $1: package name
-# $2: component
-# $3: target
-# $4: args generator func
-run_target () {
-  local package_name=$1
-  local component=$2
-  local target_name=$3
-  local extra_args=$4
-
-  local target_prog
-  target_prog=$(cabal_target_prog $package_name $component $target_name) || \
-    die "Cannot find executable for target $target_name"
-
-  echo "Running executable $target_name ..."
-
-  # Needed by bench-exec-one.sh
-  export BENCH_EXEC_PATH=$target_prog
-  mkdir -p $(dirname $(get_tix_file $target_name))
-  export HPCTIXFILE=$(get_tix_file $target_name)
-
-  run_verbose $target_prog $($extra_args $target_name $target_prog) \
-    || die "Target exe failed"
-
-  # hpc-coveralls fails if there is an empty dir and no .tix file generated
-  rmdir $(dirname $(get_tix_file $target_name)) 2>/dev/null || true
-}
-
-# $1: package name
-# $2: component
-# $3: targets
-# $4: args generator func
-run_targets() {
-    for i in $3
-    do
-      run_target $1 $2 $i $4
-    done
 }

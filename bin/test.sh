@@ -156,9 +156,53 @@ fi
 # Run targets
 #-----------------------------------------------------------------------------
 
+# $1: target name
+get_tix_file () {
+  echo $BUILD_DIR/build/$SYSTEM/ghc-${GHC_VERSION}/$PACKAGE_FULL_NAME/hpc/vanilla/tix/$1/$1.tix
+}
+
+# $1: package name
+# $2: component
+# $3: target
+# $4: args generator func
+run_target () {
+  local package_name=$1
+  local component=$2
+  local target_name=$3
+  local extra_args=$4
+
+  local target_prog
+  target_prog=$(cabal_target_prog $package_name $component $target_name) || \
+    die "Cannot find executable for target $target_name"
+
+  echo "Running executable $target_name ..."
+
+  # Needed by bench-exec-one.sh
+  export BENCH_EXEC_PATH=$target_prog
+  mkdir -p $(dirname $(get_tix_file $target_name))
+  export HPCTIXFILE=$(get_tix_file $target_name)
+
+  run_verbose $target_prog $($extra_args $target_name $target_prog) \
+    || die "Target exe failed"
+
+  # hpc-coveralls fails if there is an empty dir and no .tix file generated
+  rmdir $(dirname $(get_tix_file $target_name)) 2>/dev/null || true
+}
+
+# $1: package name with version
+# $2: component
+# $3: targets
+# $4: args generator func
+run_targets() {
+    for i in $3
+    do
+      run_target $1 $2 $i $4
+    done
+}
+
 if test "$MEASURE" -eq "1"
 then
-run_targets streamly-tests t "$TARGETS" target_exe_extra_args
+run_targets "streamly-tests-0.0.0" t "$TARGETS" target_exe_extra_args
 fi
 
 #-----------------------------------------------------------------------------
