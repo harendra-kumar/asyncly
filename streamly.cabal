@@ -51,6 +51,7 @@ extra-source-files:
     .circleci/config.yml
     .ghci
     .github/workflows/haskell.yml
+    .github/workflows/check-allocations.yml
     .gitignore
     .hlint.ignore
     .hlint.yaml

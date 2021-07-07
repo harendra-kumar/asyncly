@@ -1,0 +1,94 @@
+name: Check allocations
+
+on:
+  pull_request:
+
+jobs:
+
+  gen-artifacts:
+    name: Generate benchmark artifacts
+    # Benchmarking is a time taking process, we don't want to run benchmarks for
+    # every PR
+    if: contains(github.event.pull_request.labels.*.name, 'bench-ci')
+    env:
+      BENCH_SH: ./bench.sh
+      CHARTS_DIR: charts/
+      BENCH_TO_RUN: all_grp
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+    # Setup haskell env
+    - uses: actions/setup-haskell@v1
+      with:
+        ghc-version: 8.8.3
+        cabal-version: 3.2
+
+    - uses: actions/cache@v1
+      name: Cache ~/.cabal
+      with:
+        path: ~/.cabal
+        key: ${{ runner.os }}-${{ matrix.ghc_version }}-cabal
+
+    - uses: actions/checkout@v2
+
+    - name: Run benchmarks
+      run: |
+        chmod +x $BENCH_SH
+        $BENCH_SH --benchmarks $BENCH_TO_RUN --raw --quick
+
+    - uses: actions/upload-artifact@v2
+      with:
+        name: charts
+        path: ${{ env.CHARTS_DIR }}
+
+  run-benchs:
+    name: Run benchmarks
+    needs: gen-artifacts
+    env:
+      BENCH_SH: ./bench.sh
+      CI_HS: benchmark/CI.hs
+      CI_EXE: ./CI
+      CHARTS_DIR: charts/
+      DEGRADATION: -20
+      BENCH_TO_RUN: all_grp
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - uses: actions/setup-haskell@v1
+      with:
+        ghc-version: 8.8.3
+        cabal-version: 3.2
+
+    - uses: actions/cache@v1
+      name: Cache ~/.cabal
+      with:
+        path: ~/.cabal
+        key: ${{ runner.os }}-${{ matrix.ghc_version }}-cabal
+
+    # Checkout PR head commit
+    - uses: actions/checkout@v2
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+
+    # Download charts
+    - name: Download charts
+      uses: actions/download-artifact@v2
+      with:
+        name: charts
+        path: ${{ env.CHARTS_DIR }}
+
+    - name: Run benchmarks
+      run: |
+        chmod +x $BENCH_SH
+        $BENCH_SH --benchmarks $BENCH_TO_RUN --append --raw --quick
+
+    # This is actually a very simple file, we can get away with building it everytime.
+    # Build and run CI.hs
+    - name: Build & run CI.hs
+      run: |
+        ghc $CI_HS -o $CI_EXE
+        find $CHARTS_DIR -type f -name "*.csv" -exec bash -c "$CI_EXE {} $DEGRADATION" \;
