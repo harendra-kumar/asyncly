@@ -53,7 +53,6 @@ module Streamly.Internal.Data.Array.Foreign.Mut.Type
 
     -- * Random access
     , unsafeIndexIO
-    , unsafeIndex
 
     -- * Mutation
     , unsafeWriteIndex
@@ -407,11 +406,6 @@ unsafeIndexIO Array {..} i =
         assert (i >= 0 && elemOff `plusPtr` elemSize <= aEnd)
                (return ())
         peek elemOff
-
--- | Return element at the specified index without checking the bounds.
-{-# INLINE_NORMAL unsafeIndex #-}
-unsafeIndex :: forall a. Storable a => Array a -> Int -> a
-unsafeIndex arr i = let !r = unsafeInlineIO $ unsafeIndexIO arr i in r
 
 -- | /O(1)/ Get the byte length of the array.
 --

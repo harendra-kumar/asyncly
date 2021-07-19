@@ -399,6 +399,7 @@ library
                      -- streamly-core-array
                      -- May depend on streamly-core-stream
                      , Streamly.Internal.Data.Array.Foreign.Mut.Type
+                     , Streamly.Internal.Data.Array.Foreign.Mut
                      , Streamly.Internal.Data.Array.Foreign.Type
                      , Streamly.Internal.Data.Array.Prim.Mut.Type
                      , Streamly.Internal.Data.Array.Prim.Type

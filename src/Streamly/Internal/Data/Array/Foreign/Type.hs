@@ -381,7 +381,7 @@ unsafeIndexIO arr = MA.unsafeIndexIO (unsafeThaw arr)
 -- | Return element at the specified index without checking the bounds.
 {-# INLINE_NORMAL unsafeIndex #-}
 unsafeIndex :: forall a. Storable a => Array a -> Int -> a
-unsafeIndex arr = MA.unsafeIndex (unsafeThaw arr)
+unsafeIndex arr i = let !r = MA.unsafeInlineIO $ unsafeIndexIO arr i in r
 
 -- | /O(1)/ Get the byte length of the array.
 --

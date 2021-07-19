@@ -93,21 +93,6 @@ module Streamly.Internal.Data.Array.Foreign
     -- , readChunksOfFrom
     -- , ...
 
-    -- , writeIndex
-    -- , writeFrom -- start writing at the given position
-    -- , writeFromRev
-    -- , writeTo   -- write from beginning up to the given position
-    -- , writeToRev
-    -- , writeFromTo
-    -- , writeFromThenTo
-    --
-    -- , writeChunksOfFrom
-    -- , ...
-
-    , writeIndex
-    --, writeIndices
-    --, writeRanges
-
     -- -- * Search
     -- , bsearch
     -- , bsearchIndex
@@ -464,23 +449,6 @@ readSliceRev :: (IsStream t, Monad m, Storable a)
     => Array a -> Int -> Int -> t m a
 readSliceRev arr i len = undefined
 -}
-
--- | /O(1)/ Write the given element at the given index in the array.
--- Performs in-place mutation of the array.
---
--- /Pre-release/
-{-# INLINE writeIndex #-}
-writeIndex :: (MonadIO m, Storable a) => Array a -> Int -> a -> m ()
-writeIndex arr i a = do
-    let maxIndex = length arr - 1
-    if i < 0
-    then error "writeIndex: negative array index"
-    else if i > maxIndex
-         then error $ "writeIndex: specified array index " ++ show i
-                    ++ " is beyond the maximum index " ++ show maxIndex
-         else
-            liftIO $ unsafeWithForeignPtr (aStart arr) $ \p ->
-                pokeElemOff p i a
 
 {-
 -- | @writeSlice arr i count stream@ writes a stream to the array @arr@
